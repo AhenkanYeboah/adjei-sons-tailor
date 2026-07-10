@@ -1,0 +1,55 @@
+# Composer dependencies
+/vendor/
+/composer.lock
+
+# Environment / config files with secrets
+.env
+*.env
+
+# Logs
+*.log
+/error_log
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# IDE files
+.vscode/
+.idea/
+*.sublime-*
+
+# Temporary files
+*.tmp
+*.swp
+*.swo
+
+# Session files (if stored locally)
+sessions/# Composer dependencies
+/vendor/
+/composer.lock
+
+# Environment / config files with secrets
+.env
+*.env
+
+# Logs
+*.log
+/error_log
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# IDE files
+.vscode/
+.idea/
+*.sublime-*
+
+# Temporary files
+*.tmp
+*.swp
+*.swo
+
+# Session files (if stored locally)
+sessions/
