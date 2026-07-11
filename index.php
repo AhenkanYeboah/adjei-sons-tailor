@@ -91,7 +91,6 @@ function getDB(): PDO
     return $pdo;
 }
     return $pdo;
-}
 
 // Ensure required tables exist
 function ensure_tables_exist(): void
