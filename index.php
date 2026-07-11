@@ -72,8 +72,29 @@ function getDB(): PDO
             $user = DB_USER;
             $pass = DB_PASS;
         }
+function getDB(): PDO
+{
+    static $pdo = null;
 
-        // Build DSN with explicit host and port
+    if ($pdo === null) {
+        // Try Railway's MYSQL_URL first
+        $mysqlUrl = getenv('MYSQL_URL');
+        
+        if ($mysqlUrl) {
+            $parsed = parse_url($mysqlUrl);
+            $host = $parsed['host'] ?? '127.0.0.1';
+            $port = $parsed['port'] ?? 3306;
+            $dbname = isset($parsed['path']) ? ltrim($parsed['path'], '/') : 'bespoke_tailor';
+            $user = $parsed['user'] ?? 'root';
+            $pass = $parsed['pass'] ?? '';
+        } else {
+            $host = DB_HOST;
+            $port = 3306;
+            $dbname = DB_NAME;
+            $user = DB_USER;
+            $pass = DB_PASS;
+        }
+
         $dsn = "mysql:host=$host;port=$port;dbname=$dbname;charset=utf8mb4";
         
         try {
@@ -89,10 +110,7 @@ function getDB(): PDO
     }
 
     return $pdo;
-}
-    return $pdo;
-
-// Ensure required tables exist
+}// Ensure required tables exist
 function ensure_tables_exist(): void
 {
     try {
@@ -110,6 +128,21 @@ function ensure_tables_exist(): void
                     updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
                 ) ENGINE=InnoDB
             ");
+            
+            $db->exec("
+                INSERT INTO production_settings (days_added_per_n_orders, orders_per_increment, min_wait_days, max_wait_days)
+                VALUES (2, 5, 7, 45)
+            ");
+            
+            error_log('Created production_settings table');
+        }
+    } catch (PDOException $e) {
+        error_log('Failed to ensure tables exist: ' . $e->getMessage());
+    }
+}
+
+// Call it once when the app starts
+ensure_tables_exist();
             
             $db->exec("
                 INSERT INTO production_settings (days_added_per_n_orders, orders_per_increment, min_wait_days, max_wait_days)
