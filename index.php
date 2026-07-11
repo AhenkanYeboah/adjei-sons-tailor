@@ -90,26 +90,7 @@ function getDB(): PDO
 
     return $pdo;
 }
-        }
 
-        // Build DSN with explicit host and port (no socket)
-        $dsn = "mysql:host=$host;port=$port;dbname=$dbname;charset=utf8mb4";
-        
-        try {
-            $pdo = new PDO($dsn, $user, $pass, [
-                PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION,
-                PDO::ATTR_DEFAULT_FETCH_MODE => PDO::FETCH_ASSOC,
-                PDO::ATTR_EMULATE_PREPARES => false,
-            ]);
-        } catch (PDOException $e) {
-            error_log('DB connection failed: ' . $e->getMessage());
-            die('Sorry, something went wrong connecting to the database. Please try again shortly.');
-        }
-    }
-
-    return $pdo;
-}
-}
 // ============================================================
 // ORIGINAL: config/paystack.php
 // ============================================================
