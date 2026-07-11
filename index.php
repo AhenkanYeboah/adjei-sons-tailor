@@ -90,7 +90,42 @@ function getDB(): PDO
 
     return $pdo;
 }
+    return $pdo;
+}
 
+// Ensure required tables exist
+function ensure_tables_exist(): void
+{
+    try {
+        $db = getDB();
+        
+        $stmt = $db->query("SHOW TABLES LIKE 'production_settings'");
+        if ($stmt->rowCount() === 0) {
+            $db->exec("
+                CREATE TABLE production_settings (
+                    id INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+                    days_added_per_n_orders INT UNSIGNED NOT NULL DEFAULT 2,
+                    orders_per_increment INT UNSIGNED NOT NULL DEFAULT 5,
+                    min_wait_days INT UNSIGNED NOT NULL DEFAULT 7,
+                    max_wait_days INT UNSIGNED NOT NULL DEFAULT 45,
+                    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+                ) ENGINE=InnoDB
+            ");
+            
+            $db->exec("
+                INSERT INTO production_settings (days_added_per_n_orders, orders_per_increment, min_wait_days, max_wait_days)
+                VALUES (2, 5, 7, 45)
+            ");
+            
+            error_log('Created production_settings table');
+        }
+    } catch (PDOException $e) {
+        error_log('Failed to ensure tables exist: ' . $e->getMessage());
+    }
+}
+
+// Call it once when the app starts
+ensure_tables_exist();
 // ============================================================
 // ORIGINAL: config/paystack.php
 // ============================================================
