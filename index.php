@@ -52,22 +52,63 @@ function getDB(): PDO
     static $pdo = null;
 
     if ($pdo === null) {
-        $dsn = 'mysql:host=' . DB_HOST . ';dbname=' . DB_NAME . ';charset=utf8mb4';
-        $options = [
-            PDO::ATTR_ERRMODE            => PDO::ERRMODE_EXCEPTION,
-            PDO::ATTR_DEFAULT_FETCH_MODE => PDO::FETCH_ASSOC,
-            PDO::ATTR_EMULATE_PREPARES   => false,
-        ];
+        // Get the MySQL URL from environment variable (Railway sets this automatically)
+        $mysqlUrl = getenv('MYSQL_URL');
+        
+        // If MYSQL_URL exists, use it
+        if ($mysqlUrl) {
+            $parsed = parse_url($mysqlUrl);
+            
+            $host = $parsed['host'] ?? 'localhost';
+            $port = $parsed['port'] ?? 3306;
+            $dbname = isset($parsed['path']) ? ltrim($parsed['path'], '/') : 'bespoke_tailor';
+            $user = $parsed['user'] ?? 'root';
+            $pass = $parsed['pass'] ?? '';
+        } else {
+            // Fallback to constants (for local development)
+            $host = DB_HOST;
+            $port = 3306;
+            $dbname = DB_NAME;
+            $user = DB_USER;
+            $pass = DB_PASS;
+        }
 
+        // Build DSN with explicit host and port
+        $dsn = "mysql:host=$host;port=$port;dbname=$dbname;charset=utf8mb4";
+        
         try {
-            $pdo = new PDO($dsn, DB_USER, DB_PASS, $options);
+            $pdo = new PDO($dsn, $user, $pass, [
+                PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION,
+                PDO::ATTR_DEFAULT_FETCH_MODE => PDO::FETCH_ASSOC,
+                PDO::ATTR_EMULATE_PREPARES => false,
+            ]);
         } catch (PDOException $e) {
-            // TEMPORARY: Show the actual error for debugging
-            die('DB Error: ' . $e->getMessage());
+            error_log('DB connection failed: ' . $e->getMessage());
+            die('Sorry, something went wrong connecting to the database. Please try again shortly.');
         }
     }
 
     return $pdo;
+}
+        }
+
+        // Build DSN with explicit host and port (no socket)
+        $dsn = "mysql:host=$host;port=$port;dbname=$dbname;charset=utf8mb4";
+        
+        try {
+            $pdo = new PDO($dsn, $user, $pass, [
+                PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION,
+                PDO::ATTR_DEFAULT_FETCH_MODE => PDO::FETCH_ASSOC,
+                PDO::ATTR_EMULATE_PREPARES => false,
+            ]);
+        } catch (PDOException $e) {
+            error_log('DB connection failed: ' . $e->getMessage());
+            die('Sorry, something went wrong connecting to the database. Please try again shortly.');
+        }
+    }
+
+    return $pdo;
+}
 }
 // ============================================================
 // ORIGINAL: config/paystack.php
