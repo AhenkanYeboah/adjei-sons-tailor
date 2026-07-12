@@ -48,6 +48,25 @@ if (session_status() === PHP_SESSION_NONE) {
     session_start();
 }
 
+// Global safety net: turn any uncaught error/exception (e.g. a query against
+// a table that doesn't exist yet, a missing DB, etc.) into a readable message
+// instead of a blank platform-level "HTTP ERROR 500" page. The real detail
+// still goes to error_log so you can see it in `railway logs`.
+set_exception_handler(function (Throwable $e): void {
+    error_log('UNCAUGHT: ' . $e->getMessage() . ' in ' . $e->getFile() . ':' . $e->getLine());
+    if (!headers_sent()) {
+        http_response_code(500);
+        header('Content-Type: text/html; charset=UTF-8');
+    }
+    $detail = (getenv('APP_DEBUG') === '1') ? ('<pre>' . htmlspecialchars($e->getMessage()) . '</pre>') : '';
+    echo '<!DOCTYPE html><html><head><meta charset="UTF-8"><title>Something went wrong</title></head>'
+       . '<body style="font-family:sans-serif;max-width:640px;margin:80px auto;line-height:1.5;">'
+       . '<h2>Sorry, something went wrong on our end.</h2>'
+       . '<p>Our team has been notified. Please try again shortly.</p>'
+       . $detail
+       . '</body></html>';
+});
+
 function getDB(): PDO
 {
     static $pdo = null;
@@ -2092,6 +2111,332 @@ function page_paystack_verify(): void
 }
 
 // ============================================================
+// STAFF: AUTH
+// ============================================================
+
+function current_staff_id(): ?int
+{
+    return $_SESSION['staff_id'] ?? null;
+}
+
+function require_staff_login(): void
+{
+    if (!current_staff_id()) {
+        header('Location: ' . url('staff_login'));
+        exit;
+    }
+}
+
+function page_staff_login(): void
+{
+    $db = getDB();
+    $errors = [];
+
+    // One-time bootstrap: if there are no staff accounts yet, let the first
+    // visitor create the owner account instead of showing a login form
+    // nobody could ever pass.
+    $staffCount = (int) $db->query('SELECT COUNT(*) FROM staff')->fetchColumn();
+
+    if ($staffCount === 0) {
+        if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+            if (!csrf_verify()) {
+                $errors[] = 'Your session expired. Please try again.';
+            } else {
+                $fullName = trim($_POST['full_name'] ?? '');
+                $email = trim($_POST['email'] ?? '');
+                $password = $_POST['password'] ?? '';
+
+                if ($fullName === '' || $email === '' || strlen($password) < 8) {
+                    $errors[] = 'Name, email, and an 8+ character password are required.';
+                }
+                if ($email !== '' && !filter_var($email, FILTER_VALIDATE_EMAIL)) {
+                    $errors[] = 'Please enter a valid email address.';
+                }
+
+                if (empty($errors)) {
+                    $stmt = $db->prepare(
+                        'INSERT INTO staff (full_name, role, email, password_hash, is_active)
+                         VALUES (:name, :role, :email, :hash, 1)'
+                    );
+                    $stmt->execute([
+                        'name'  => $fullName,
+                        'role'  => 'owner',
+                        'email' => $email,
+                        'hash'  => password_hash($password, PASSWORD_DEFAULT),
+                    ]);
+                    $_SESSION['staff_id'] = (int) $db->lastInsertId();
+                    header('Location: ' . url('staff_dashboard'));
+                    exit;
+                }
+            }
+        }
+
+        render_header('Create Owner Account');
+        ?>
+<section class="page-section">
+  <div class="wrap">
+    <div class="form-card">
+      <h2>Set Up Staff Access</h2>
+      <p style="color:#5b564f; font-size:14.5px; margin-bottom:10px;">No staff accounts exist yet — create the owner account to get started.</p>
+      <?php foreach ($errors as $err): ?>
+        <div class="flash flash-error"><?= e($err) ?></div>
+      <?php endforeach; ?>
+      <form method="post" action="<?= url('staff_login') ?>">
+        <?= csrf_field() ?>
+        <label for="full_name">Full Name</label>
+        <input type="text" id="full_name" name="full_name" required value="<?= e($_POST['full_name'] ?? '') ?>">
+        <label for="email">Email</label>
+        <input type="email" id="email" name="email" required value="<?= e($_POST['email'] ?? '') ?>">
+        <label for="password">Password</label>
+        <input type="password" id="password" name="password" required minlength="8">
+        <div class="form-actions">
+          <button type="submit" class="btn-primary">Create Owner Account</button>
+        </div>
+      </form>
+    </div>
+  </div>
+</section>
+<?php
+        render_footer();
+        return;
+    }
+
+    if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+        if (!csrf_verify()) {
+            $errors[] = 'Your session expired. Please try again.';
+        } else {
+            $email = trim($_POST['email'] ?? '');
+            $password = $_POST['password'] ?? '';
+
+            $stmt = $db->prepare('SELECT id, password_hash, is_active FROM staff WHERE email = :email');
+            $stmt->execute(['email' => $email]);
+            $staff = $stmt->fetch();
+
+            if (!$staff || !password_verify($password, $staff['password_hash'])) {
+                $errors[] = 'Incorrect email or password.';
+            } elseif (!$staff['is_active']) {
+                $errors[] = 'This staff account has been deactivated.';
+            } else {
+                $_SESSION['staff_id'] = (int) $staff['id'];
+                header('Location: ' . url('staff_dashboard'));
+                exit;
+            }
+        }
+    }
+
+    render_header('Staff Login');
+    ?>
+<section class="page-section">
+  <div class="wrap">
+    <div class="form-card">
+      <h2>Staff Login</h2>
+      <?php foreach ($errors as $err): ?>
+        <div class="flash flash-error"><?= e($err) ?></div>
+      <?php endforeach; ?>
+      <form method="post" action="<?= url('staff_login') ?>">
+        <?= csrf_field() ?>
+        <label for="email">Email</label>
+        <input type="email" id="email" name="email" required autofocus value="<?= e($_POST['email'] ?? '') ?>">
+        <label for="password">Password</label>
+        <input type="password" id="password" name="password" required>
+        <div class="form-actions">
+          <button type="submit" class="btn-primary">Log In</button>
+        </div>
+      </form>
+    </div>
+  </div>
+</section>
+<?php
+    render_footer();
+}
+
+function page_staff_logout(): void
+{
+    unset($_SESSION['staff_id']);
+    header('Location: ' . url('staff_login'));
+    exit;
+}
+
+// ============================================================
+// STAFF: DASHBOARD + MEASUREMENT ENTRY
+// ============================================================
+
+function page_staff_dashboard(): void
+{
+    require_staff_login();
+    $db = getDB();
+
+    // Clients who've booked a video measurement call but have no measurement
+    // on file yet — this is the queue a tailor works through.
+    $pending = $db->query(
+        "SELECT b.id AS booking_id, b.slot_datetime_utc, b.status AS booking_status,
+                c.id AS client_id, c.full_name, c.phone
+         FROM bookings b
+         JOIN clients c ON c.id = b.client_id
+         WHERE b.booking_type = 'video_measurement'
+           AND b.status != 'cancelled'
+           AND NOT EXISTS (
+               SELECT 1 FROM measurements m WHERE m.client_id = c.id
+           )
+         ORDER BY b.slot_datetime_utc ASC"
+    )->fetchAll();
+
+    render_header('Staff Dashboard');
+    ?>
+<section class="page-section">
+  <div class="wrap">
+    <div class="form-card" style="max-width:820px;">
+      <h2>Measurement Queue</h2>
+      <p style="color:#5b564f; font-size:14.5px; margin-bottom:16px;">Clients who've booked a measurement call but don't have measurements recorded yet.</p>
+
+      <?php if (empty($pending)): ?>
+        <p>Nothing pending — every booked client has measurements on file.</p>
+      <?php else: ?>
+        <table class="order-table">
+          <tr><th>Client</th><th>Phone</th><th>Call Time (UTC)</th><th></th></tr>
+          <?php foreach ($pending as $row): ?>
+            <tr>
+              <td><?= e($row['full_name']) ?></td>
+              <td class="mono"><?= e($row['phone']) ?></td>
+              <td><?= e($row['slot_datetime_utc']) ?></td>
+              <td><a class="btn-primary" style="padding:6px 14px; font-size:13px;" href="<?= url('staff_measurement', 'client_id=' . (int) $row['client_id'] . '&booking_id=' . (int) $row['booking_id']) ?>">Record Measurements</a></td>
+            </tr>
+          <?php endforeach; ?>
+        </table>
+      <?php endif; ?>
+
+      <p style="margin-top:24px;"><a href="<?= url('staff_logout') ?>" style="color:var(--brass);">Log out</a></p>
+    </div>
+  </div>
+</section>
+<?php
+    render_footer();
+}
+
+function page_staff_measurement(): void
+{
+    require_staff_login();
+    $db = getDB();
+    $staffId = current_staff_id();
+
+    $clientId = (int) ($_GET['client_id'] ?? $_POST['client_id'] ?? 0);
+    $bookingId = isset($_GET['booking_id']) ? (int) $_GET['booking_id'] : (isset($_POST['booking_id']) ? (int) $_POST['booking_id'] : null);
+
+    $stmt = $db->prepare('SELECT id, full_name, phone FROM clients WHERE id = :id');
+    $stmt->execute(['id' => $clientId]);
+    $client = $stmt->fetch();
+
+    if (!$client) {
+        flash('error', 'Client not found.');
+        header('Location: ' . url('staff_dashboard'));
+        exit;
+    }
+
+    $errors = [];
+
+    if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+        if (!csrf_verify()) {
+            $errors[] = 'Your session expired. Please try again.';
+        } else {
+            $fields = ['chest_cm', 'waist_cm', 'hip_cm', 'shoulder_cm', 'sleeve_cm', 'inseam_cm', 'neck_cm', 'height_cm'];
+            $values = [];
+            foreach ($fields as $f) {
+                $raw = trim($_POST[$f] ?? '');
+                $values[$f] = $raw === '' ? null : (float) $raw;
+            }
+            $method = $_POST['method'] ?? 'video_call';
+            if (!in_array($method, ['video_call', 'in_person', 'self_reported', 'ai_estimated'], true)) {
+                $method = 'video_call';
+            }
+            $notes = trim($_POST['extra_notes'] ?? '');
+
+            if (empty($errors)) {
+                $stmt = $db->prepare(
+                    'INSERT INTO measurements
+                       (client_id, chest_cm, waist_cm, hip_cm, shoulder_cm, sleeve_cm, inseam_cm, neck_cm, height_cm,
+                        extra_notes, method, recorded_by_staff_id, booking_id)
+                     VALUES
+                       (:client_id, :chest, :waist, :hip, :shoulder, :sleeve, :inseam, :neck, :height,
+                        :notes, :method, :staff_id, :booking_id)'
+                );
+                $stmt->execute([
+                    'client_id'  => $clientId,
+                    'chest'      => $values['chest_cm'],
+                    'waist'      => $values['waist_cm'],
+                    'hip'        => $values['hip_cm'],
+                    'shoulder'   => $values['shoulder_cm'],
+                    'sleeve'     => $values['sleeve_cm'],
+                    'inseam'     => $values['inseam_cm'],
+                    'neck'       => $values['neck_cm'],
+                    'height'     => $values['height_cm'],
+                    'notes'      => $notes !== '' ? $notes : null,
+                    'method'     => $method,
+                    'staff_id'   => $staffId,
+                    'booking_id' => $bookingId,
+                ]);
+
+                if ($bookingId) {
+                    $upd = $db->prepare("UPDATE bookings SET status = 'completed' WHERE id = :id");
+                    $upd->execute(['id' => $bookingId]);
+                }
+
+                flash('success', 'Measurements saved for ' . $client['full_name'] . '.');
+                header('Location: ' . url('staff_dashboard'));
+                exit;
+            }
+        }
+    }
+
+    render_header('Record Measurements');
+    ?>
+<section class="page-section">
+  <div class="wrap">
+    <div class="form-card" style="max-width:640px;">
+      <h2>Record Measurements — <?= e($client['full_name']) ?></h2>
+      <p style="color:#5b564f; font-size:14.5px; margin-bottom:10px;"><?= e($client['phone']) ?></p>
+      <?php foreach ($errors as $err): ?>
+        <div class="flash flash-error"><?= e($err) ?></div>
+      <?php endforeach; ?>
+      <form method="post" action="<?= url('staff_measurement', 'client_id=' . $clientId . ($bookingId ? '&booking_id=' . $bookingId : '')) ?>">
+        <?= csrf_field() ?>
+        <input type="hidden" name="client_id" value="<?= $clientId ?>">
+        <?php if ($bookingId): ?><input type="hidden" name="booking_id" value="<?= $bookingId ?>"><?php endif; ?>
+
+        <?php
+        $labels = [
+            'chest_cm' => 'Chest (cm)', 'waist_cm' => 'Waist (cm)', 'hip_cm' => 'Hip (cm)',
+            'shoulder_cm' => 'Shoulder (cm)', 'sleeve_cm' => 'Sleeve (cm)', 'inseam_cm' => 'Inseam (cm)',
+            'neck_cm' => 'Neck (cm)', 'height_cm' => 'Height (cm)',
+        ];
+        foreach ($labels as $key => $label): ?>
+          <label for="<?= $key ?>"><?= $label ?></label>
+          <input type="number" step="0.1" id="<?= $key ?>" name="<?= $key ?>" value="<?= e($_POST[$key] ?? '') ?>">
+        <?php endforeach; ?>
+
+        <label for="method">Method</label>
+        <select id="method" name="method">
+          <option value="video_call">Video Call</option>
+          <option value="in_person">In Person</option>
+          <option value="self_reported">Self Reported</option>
+          <option value="ai_estimated">AI Estimated</option>
+        </select>
+
+        <label for="extra_notes">Notes</label>
+        <textarea id="extra_notes" name="extra_notes" rows="3"><?= e($_POST['extra_notes'] ?? '') ?></textarea>
+
+        <div class="form-actions">
+          <button type="submit" class="btn-primary">Save Measurements</button>
+        </div>
+      </form>
+      <p style="margin-top:16px;"><a href="<?= url('staff_dashboard') ?>" style="color:var(--brass);">&larr; Back to queue</a></p>
+    </div>
+  </div>
+</section>
+<?php
+    render_footer();
+}
+
+// ============================================================
 // WHATSAPP CRON WORKER (CLI only)
 // ============================================================
 
@@ -2287,6 +2632,18 @@ switch ($page) {
         break;
     case 'paystack_verify':
         page_paystack_verify();
+        break;
+    case 'staff_login':
+        page_staff_login();
+        break;
+    case 'staff_logout':
+        page_staff_logout();
+        break;
+    case 'staff_dashboard':
+        page_staff_dashboard();
+        break;
+    case 'staff_measurement':
+        page_staff_measurement();
         break;
     default:
         http_response_code(404);
