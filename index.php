@@ -107,7 +107,99 @@ function getDB(): PDO
 
     return $pdo;
 }
+// ============================================================
+// AUTO-IMPORT SCHEMA ON FIRST RUN (Railway)
+// ============================================================
 
+function auto_import_tables(): void
+{
+    try {
+        $db = getDB();
+        
+        // Check if production_settings exists
+        $stmt = $db->query("SHOW TABLES LIKE 'production_settings'");
+        if ($stmt->rowCount() === 0) {
+            error_log('Tables not found - importing schema...');
+            
+            // Try to find the schema file
+            $schemaFile = __DIR__ . '/schema.sql';
+            if (!file_exists($schemaFile)) {
+                $schemaFile = __DIR__ . '/schema-railway.sql';
+            }
+            
+            if (file_exists($schemaFile)) {
+                $sql = file_get_contents($schemaFile);
+                
+                // Remove CREATE DATABASE statements
+                $sql = preg_replace('/CREATE DATABASE.*?;/i', '', $sql);
+                // Remove USE statements
+                $sql = preg_replace('/USE\s+[a-zA-Z0-9_]+;/i', '', $sql);
+                // Remove comments (optional but helps)
+                $sql = preg_replace('/--.*?$/m', '', $sql);
+                
+                // Split into individual statements
+                $statements = array_filter(explode(';', $sql));
+                
+                $success = 0;
+                foreach ($statements as $statement) {
+                    $statement = trim($statement);
+                    if (!empty($statement) && strpos($statement, 'CREATE TABLE') === 0) {
+                        try {
+                            $db->exec($statement);
+                            $success++;
+                        } catch (PDOException $e) {
+                            // Check if table already exists
+                            if (strpos($e->getMessage(), 'already exists') === false) {
+                                error_log('Statement failed: ' . $e->getMessage());
+                            }
+                        }
+                    }
+                }
+                error_log("Schema imported successfully! $success tables created.");
+                
+                // Now import seed data (default settings)
+                auto_import_seed_data($db);
+                
+            } else {
+                error_log('Schema file not found - please upload schema.sql');
+            }
+        }
+    } catch (PDOException $e) {
+        error_log('Auto-import failed: ' . $e->getMessage());
+    }
+}
+
+function auto_import_seed_data(PDO $db): void
+{
+    try {
+        // Check if production_settings has data
+        $stmt = $db->query("SELECT COUNT(*) FROM production_settings");
+        if ((int) $stmt->fetchColumn() === 0) {
+            // Insert default settings
+            $db->exec("
+                INSERT INTO production_settings (days_added_per_n_orders, orders_per_increment, min_wait_days, max_wait_days)
+                VALUES (2, 5, 7, 45)
+            ");
+            error_log('Seed data imported successfully (production_settings).');
+            
+            // Also create express_slots for current week
+            $weekStart = (new DateTime('monday this week'))->format('Y-m-d');
+            $db->exec("
+                INSERT INTO express_slots (week_start_date, tier, slots_total, slots_used)
+                VALUES 
+                    ('$weekStart', 'express_5day', 6, 2),
+                    ('$weekStart', 'rush_48hr', 2, 1)
+                ON DUPLICATE KEY UPDATE slots_total = VALUES(slots_total)
+            ");
+            error_log('Express slots created.');
+        }
+    } catch (PDOException $e) {
+        error_log('Seed import failed: ' . $e->getMessage());
+    }
+}
+
+// Call the function - this will run once and create all tables
+auto_import_tables();
 function paystack_is_configured(): bool
 {
     return strpos(PAYSTACK_SECRET_KEY, 'CHANGE_ME') !== 0;
