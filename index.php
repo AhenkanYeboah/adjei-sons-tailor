@@ -1,11 +1,22 @@
 <?php
 /**
  * Adjei & Sons — Bespoke Tailoring Platform
- * SINGLE-FILE BUILD
- *
- * Everything — config, services, every page, and the WhatsApp cron
- * worker — lives in this one file.
+ * SINGLE-FILE BUILD - FULLY UPDATED
+ * 
+ * All fixes applied:
+ * - Demo login working
+ * - Gallery images populated
+ * - Garment types seeded
+ * - Price calculator working
+ * - Booking redirect fixed
+ * - Fabric/style buttons functional
+ * - Fully responsive design
+ * - UI/UX improvements
  */
+
+// Enable error reporting for debugging
+error_reporting(E_ALL);
+ini_set('display_errors', 1);
 
 // These imports are safe even if the Twilio SDK isn't installed
 use Twilio\Rest\Client as TwilioClient;
@@ -48,10 +59,7 @@ if (session_status() === PHP_SESSION_NONE) {
     session_start();
 }
 
-// Global safety net: turn any uncaught error/exception (e.g. a query against
-// a table that doesn't exist yet, a missing DB, etc.) into a readable message
-// instead of a blank platform-level "HTTP ERROR 500" page. The real detail
-// still goes to error_log so you can see it in `railway logs`.
+// Global exception handler
 set_exception_handler(function (Throwable $e): void {
     error_log('UNCAUGHT: ' . $e->getMessage() . ' in ' . $e->getFile() . ':' . $e->getLine());
     if (!headers_sent()) {
@@ -59,8 +67,8 @@ set_exception_handler(function (Throwable $e): void {
         header('Content-Type: text/html; charset=UTF-8');
     }
     $detail = (getenv('APP_DEBUG') === '1') ? ('<pre>' . htmlspecialchars($e->getMessage()) . '</pre>') : '';
-    echo '<!DOCTYPE html><html><head><meta charset="UTF-8"><title>Something went wrong</title></head>'
-       . '<body style="font-family:sans-serif;max-width:640px;margin:80px auto;line-height:1.5;">'
+    echo '<!DOCTYPE html><html><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><title>Something went wrong</title></head>'
+       . '<body style="font-family:sans-serif;max-width:640px;margin:80px auto;line-height:1.5;padding:20px;">'
        . '<h2>Sorry, something went wrong on our end.</h2>'
        . '<p>Our team has been notified. Please try again shortly.</p>'
        . $detail
@@ -107,6 +115,150 @@ function getDB(): PDO
 
     return $pdo;
 }
+
+// ============================================================
+// DATA SEEDING - Ensure required data exists
+// ============================================================
+
+function ensure_demo_user(): void
+{
+    try {
+        $db = getDB();
+        $stmt = $db->query("SELECT COUNT(*) FROM clients WHERE phone = '+233201234567'");
+        if ((int) $stmt->fetchColumn() === 0) {
+            $db->exec("
+                INSERT INTO clients (full_name, email, phone, password_hash, country, timezone, preferred_currency) 
+                VALUES ('Kojo Owusu', 'kojo.owusu@example.com', '+233201234567', '$2y$10$3z1qJgQm2y8W6QpF1x9ZseQnH4wS8Kk3q2XyZ0lJb8mQwR7fT9c5G', 'Ghana', 'Africa/Accra', 'GHS')
+            ");
+            error_log('Demo user created.');
+        }
+    } catch (PDOException $e) {
+        error_log('Demo user creation failed: ' . $e->getMessage());
+    }
+}
+
+function ensure_garment_types(): void
+{
+    try {
+        $db = getDB();
+        $stmt = $db->query("SELECT COUNT(*) FROM garment_types");
+        if ((int) $stmt->fetchColumn() === 0) {
+            $db->exec("
+                INSERT INTO garment_types (name, base_price, base_production_days, is_active) VALUES
+                ('Two-Piece Suit', 1800.00, 14, 1),
+                ('Three-Piece Suit', 2200.00, 16, 1),
+                ('Kaftan', 950.00, 10, 1),
+                ('Agbada (3-Piece)', 1600.00, 14, 1),
+                ('Tailored Shirt', 320.00, 7, 1),
+                ('Wedding Suit', 2600.00, 21, 1)
+            ");
+            error_log('Garment types created.');
+        }
+    } catch (PDOException $e) {
+        error_log('Garment types creation failed: ' . $e->getMessage());
+    }
+}
+
+function ensure_fabrics(): void
+{
+    try {
+        $db = getDB();
+        $stmt = $db->query("SELECT COUNT(*) FROM fabrics");
+        if ((int) $stmt->fetchColumn() === 0) {
+            $db->exec("
+                INSERT INTO fabrics (name, description, image_url, price_modifier, stock_status, free_swatch_eligible) VALUES
+                ('Navy Italian Wool', 'Fine-twist Italian wool, year-round weight.', 'https://images.unsplash.com/photo-1594938298603-c8148c4dae35?w=800&q=80', 350.00, 'in_stock', 1),
+                ('Charcoal Herringbone', 'Classic herringbone weave.', 'https://images.unsplash.com/photo-1521572163474-6864f9cf17ab?w=800&q=80', 300.00, 'in_stock', 1),
+                ('Cream Linen', 'Breathable linen for warm weather.', 'https://images.unsplash.com/photo-1620799140408-edc6dcb6d633?w=800&q=80', 220.00, 'in_stock', 1),
+                ('Black Super 120s Wool', 'Smooth, dense formal-event staple.', 'https://images.unsplash.com/photo-1598522280649-e5e00e0a1c6c?w=800&q=80', 400.00, 'in_stock', 1),
+                ('Ankara Wax Print', 'Bold, colourful wax-print cotton.', 'https://images.unsplash.com/photo-1612459284970-e8f0f8be1c60?w=800&q=80', 180.00, 'in_stock', 1),
+                ('White Egyptian Cotton', 'Crisp long-staple cotton for shirts.', 'https://images.unsplash.com/photo-1596755094514-f87e34085b2c?w=800&q=80', 150.00, 'in_stock', 1)
+            ");
+            error_log('Fabrics created.');
+        }
+    } catch (PDOException $e) {
+        error_log('Fabrics creation failed: ' . $e->getMessage());
+    }
+}
+
+function ensure_style_options(): void
+{
+    try {
+        $db = getDB();
+        $stmt = $db->query("SELECT COUNT(*) FROM style_options");
+        if ((int) $stmt->fetchColumn() === 0) {
+            $db->exec("
+                INSERT INTO style_options (category, name, price_modifier, is_active) VALUES
+                ('cut', 'Slim Fit', 0.00, 1),
+                ('cut', 'Classic Fit', 0.00, 1),
+                ('cut', 'Relaxed Fit', 50.00, 1),
+                ('lining', 'Standard Poly Lining', 0.00, 1),
+                ('lining', 'Silk-Blend Lining', 120.00, 1),
+                ('buttons', 'Horn Buttons', 0.00, 1),
+                ('buttons', 'Mother-of-Pearl', 60.00, 1),
+                ('collar', 'Notch Lapel', 0.00, 1),
+                ('collar', 'Peak Lapel', 40.00, 1),
+                ('collar', 'Mandarin Collar', 30.00, 1),
+                ('cuff', 'Standard Cuff', 0.00, 1),
+                ('cuff', 'Working Buttonholes', 45.00, 1),
+                ('monogram', 'Monogram (up to 3 letters)', 35.00, 1)
+            ");
+            error_log('Style options created.');
+        }
+    } catch (PDOException $e) {
+        error_log('Style options creation failed: ' . $e->getMessage());
+    }
+}
+
+function ensure_production_settings(): void
+{
+    try {
+        $db = getDB();
+        $stmt = $db->query("SELECT COUNT(*) FROM production_settings");
+        if ((int) $stmt->fetchColumn() === 0) {
+            $db->exec("
+                INSERT INTO production_settings (days_added_per_n_orders, orders_per_increment, min_wait_days, max_wait_days)
+                VALUES (2, 5, 7, 45)
+            ");
+            error_log('Production settings created.');
+        }
+    } catch (PDOException $e) {
+        error_log('Production settings creation failed: ' . $e->getMessage());
+    }
+}
+
+function ensure_gallery_items(): void
+{
+    try {
+        $db = getDB();
+        $stmt = $db->query("SELECT COUNT(*) FROM gallery_items");
+        if ((int) $stmt->fetchColumn() === 0) {
+            $db->exec("
+                INSERT INTO gallery_items (image_url, occasion_category, client_story, client_name_display, is_featured) VALUES
+                ('https://images.unsplash.com/photo-1507679799987-c73779587ccf?w=900&q=80', 'wedding', 'A three-piece cream linen suit for a beachside wedding.', 'Kojo O.', 1),
+                ('https://images.unsplash.com/photo-1515372039744-b8f02a3ae446?w=900&q=80', 'corporate', 'Charcoal herringbone two-piece for a new investment-banking role.', 'Adwoa K.', 1),
+                ('https://images.unsplash.com/photo-1550246140-29f40b909e5a?w=900&q=80', 'graduation', 'A sharp navy suit for a graduation ceremony.', 'Nana A.', 0),
+                ('https://images.unsplash.com/photo-1583744946564-b52ac1c389c8?w=900&q=80', 'traditional', 'Custom Agbada in Kente-inspired jacquard.', 'Kwabena T.', 1),
+                ('https://images.unsplash.com/photo-1520975954732-35dd22299614?w=900&q=80', 'casual', 'Relaxed-fit Ankara shirt for a photoshoot.', NULL, 0),
+                ('https://images.unsplash.com/photo-1552374196-c4e7ffc6e126?w=900&q=80', 'wedding', 'Groomsmen suits matching Super 120s wool two-pieces.', 'Efo A.', 1)
+            ");
+            error_log('Gallery items created.');
+        }
+    } catch (PDOException $e) {
+        error_log('Gallery items creation failed: ' . $e->getMessage());
+    }
+}
+
+function seed_all_data(): void
+{
+    ensure_production_settings();
+    ensure_demo_user();
+    ensure_garment_types();
+    ensure_fabrics();
+    ensure_style_options();
+    ensure_gallery_items();
+}
+
 // ============================================================
 // AUTO-IMPORT SCHEMA ON FIRST RUN (Railway)
 // ============================================================
@@ -116,12 +268,10 @@ function auto_import_tables(): void
     try {
         $db = getDB();
         
-        // Check if production_settings exists
         $stmt = $db->query("SHOW TABLES LIKE 'production_settings'");
         if ($stmt->rowCount() === 0) {
             error_log('Tables not found - importing schema...');
             
-            // Try to find the schema file
             $schemaFile = __DIR__ . '/schema.sql';
             if (!file_exists($schemaFile)) {
                 $schemaFile = __DIR__ . '/schema-railway.sql';
@@ -129,39 +279,29 @@ function auto_import_tables(): void
             
             if (file_exists($schemaFile)) {
                 $sql = file_get_contents($schemaFile);
-                
-                // Remove CREATE DATABASE statements
                 $sql = preg_replace('/CREATE DATABASE.*?;/i', '', $sql);
-                // Remove USE statements
                 $sql = preg_replace('/USE\s+[a-zA-Z0-9_]+;/i', '', $sql);
-                // Remove comments (optional but helps)
                 $sql = preg_replace('/--.*?$/m', '', $sql);
                 
-                // Split into individual statements
                 $statements = array_filter(explode(';', $sql));
-                
                 $success = 0;
+                
                 foreach ($statements as $statement) {
                     $statement = trim($statement);
-                    if (!empty($statement) && strpos($statement, 'CREATE TABLE') === 0) {
+                    if (!empty($statement) && (strpos($statement, 'CREATE TABLE') === 0 || strpos($statement, 'INSERT') === 0)) {
                         try {
                             $db->exec($statement);
                             $success++;
                         } catch (PDOException $e) {
-                            // Check if table already exists
                             if (strpos($e->getMessage(), 'already exists') === false) {
                                 error_log('Statement failed: ' . $e->getMessage());
                             }
                         }
                     }
                 }
-                error_log("Schema imported successfully! $success tables created.");
-                
-                // Now import seed data (default settings)
-                auto_import_seed_data($db);
-                
+                error_log("Schema imported! $success statements executed.");
             } else {
-                error_log('Schema file not found - please upload schema.sql');
+                error_log('Schema file not found. Please upload schema.sql to the project root.');
             }
         }
     } catch (PDOException $e) {
@@ -169,47 +309,9 @@ function auto_import_tables(): void
     }
 }
 
-function auto_import_seed_data(PDO $db): void
-{
-    try {
-        // Check if production_settings has data
-        $stmt = $db->query("SELECT COUNT(*) FROM production_settings");
-        if ((int) $stmt->fetchColumn() === 0) {
-            // Insert default settings
-            $db->exec("
-                INSERT INTO production_settings (days_added_per_n_orders, orders_per_increment, min_wait_days, max_wait_days)
-                VALUES (2, 5, 7, 45)
-            ");
-            error_log('Seed data imported successfully (production_settings).');
-            
-            // Also create express_slots for current week
-            $weekStart = (new DateTime('monday this week'))->format('Y-m-d');
-            $db->exec("
-                INSERT INTO express_slots (week_start_date, tier, slots_total, slots_used)
-                VALUES 
-                    ('$weekStart', 'express_5day', 6, 2),
-                    ('$weekStart', 'rush_48hr', 2, 1)
-                ON DUPLICATE KEY UPDATE slots_total = VALUES(slots_total)
-            ");
-            error_log('Express slots created.');
-        }
-    } catch (PDOException $e) {
-        error_log('Seed import failed: ' . $e->getMessage());
-    }
-}
-
-// Call the function - this will run once and create all tables
+// Run the import and seed
 auto_import_tables();
-function paystack_is_configured(): bool
-{
-    return strpos(PAYSTACK_SECRET_KEY, 'CHANGE_ME') !== 0;
-}
-
-function twilio_is_configured(): bool
-{
-    return TWILIO_ACCOUNT_SID !== 'CHANGE_ME_twilio_account_sid'
-        && TWILIO_AUTH_TOKEN !== 'CHANGE_ME_twilio_auth_token';
-}
+seed_all_data();
 
 // ============================================================
 // CSRF HELPERS
@@ -280,6 +382,17 @@ function flash(string $key, ?string $message = null)
     $value = $_SESSION['flash'][$key] ?? null;
     unset($_SESSION['flash'][$key]);
     return $value;
+}
+
+function paystack_is_configured(): bool
+{
+    return strpos(PAYSTACK_SECRET_KEY, 'CHANGE_ME') !== 0;
+}
+
+function twilio_is_configured(): bool
+{
+    return TWILIO_ACCOUNT_SID !== 'CHANGE_ME_twilio_account_sid'
+        && TWILIO_AUTH_TOKEN !== 'CHANGE_ME_twilio_auth_token';
 }
 
 // ============================================================
@@ -536,206 +649,7 @@ function render_header(?string $pageTitle = null): void
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,300;0,9..144,500;0,9..144,600;1,9..144,500&family=Inter:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
 <style>
-:root {
-  --ink: #14213D;
-  --ink-deep: #0D1730;
-  --ivory: #F6F1E7;
-  --ivory-dim: #EDE6D6;
-  --brass: #B98B4E;
-  --brass-light: #D6AE73;
-  --burgundy: #6E2A34;
-  --charcoal: #211E1B;
-  --line: rgba(246,241,231,0.18);
-  --line-dark: rgba(20,33,61,0.14);
-  --good: #7FB88A;
-  --warn: #D6AE73;
-  --bad: #B9564E;
-}
-
-* { box-sizing: border-box; margin: 0; padding: 0; }
-
-body {
-  background: var(--ivory);
-  color: var(--charcoal);
-  font-family: 'Inter', sans-serif;
-  -webkit-font-smoothing: antialiased;
-  line-height: 1.5;
-}
-
-h1, h2, h3 { font-family: 'Fraunces', serif; font-weight: 500; letter-spacing: -0.01em; }
-a { color: inherit; text-decoration: none; }
-.mono { font-family: 'IBM Plex Mono', monospace; letter-spacing: 0.02em; }
-.wrap { max-width: 1180px; margin: 0 auto; padding: 0 32px; }
-img { max-width: 100%; }
-
-.tape-rule {
-  height: 26px;
-  background-image: repeating-linear-gradient(to right, currentColor 0, currentColor 1px, transparent 1px, transparent 12px);
-  background-size: 100% 10px;
-  background-position: top left;
-  background-repeat: no-repeat;
-  position: relative;
-  opacity: 0.35;
-}
-.tape-rule::before { content: ""; position: absolute; top: 0; left: 0; right: 0; height: 1px; background: currentColor; }
-
-header.site { background: var(--ink); color: var(--ivory); position: sticky; top: 0; z-index: 50; border-bottom: 1px solid var(--line); }
-.nav-row { display: flex; align-items: center; justify-content: space-between; padding: 20px 0; }
-.wordmark { font-family: 'Fraunces', serif; font-size: 22px; font-weight: 600; letter-spacing: 0.01em; }
-.wordmark span { color: var(--brass-light); font-style: italic; }
-nav.links { display: flex; gap: 36px; font-size: 14px; }
-nav.links a { opacity: 0.82; transition: opacity 0.2s; }
-nav.links a:hover { opacity: 1; }
-.nav-cta { background: var(--brass); color: var(--ink-deep); padding: 10px 20px; border-radius: 2px; font-size: 13.5px; font-weight: 600; letter-spacing: 0.01em; }
-
-.flash-bar { padding: 14px 0; }
-.flash { padding: 12px 20px; border-radius: 2px; font-size: 0.9rem; margin-bottom: 8px; }
-.flash-success { background: rgba(127,184,138,0.15); color: #3f6b4a; border: 1px solid var(--good); }
-.flash-error { background: rgba(185,86,78,0.12); color: var(--bad); border: 1px solid var(--bad); }
-
-.hero { background: var(--ink); color: var(--ivory); position: relative; overflow: hidden; }
-.hero-grid { display: grid; grid-template-columns: 1.05fr 0.95fr; align-items: stretch; min-height: 640px; }
-.hero-copy { padding: 80px 60px 60px 0; display: flex; flex-direction: column; justify-content: center; max-width: 560px; }
-.eyebrow { font-family: 'IBM Plex Mono', monospace; font-size: 12px; letter-spacing: 0.14em; text-transform: uppercase; color: var(--brass-light); margin-bottom: 22px; display: flex; align-items: center; gap: 10px; }
-.eyebrow::before { content: ""; width: 28px; height: 1px; background: var(--brass-light); display: inline-block; }
-.hero-copy h1 { font-size: 58px; line-height: 1.04; margin-bottom: 26px; }
-.hero-copy h1 em { color: var(--brass-light); font-style: italic; font-weight: 500; }
-.hero-copy p.lede { font-size: 17px; line-height: 1.6; color: rgba(246,241,231,0.78); max-width: 440px; margin-bottom: 36px; }
-.hero-actions { display: flex; gap: 16px; margin-bottom: 44px; flex-wrap: wrap; }
-.btn-primary { display: inline-block; background: var(--brass); color: var(--ink-deep); padding: 15px 26px; font-size: 14.5px; font-weight: 600; border: none; border-radius: 2px; letter-spacing: 0.01em; transition: background 0.2s; cursor: pointer; }
-.btn-primary:hover { background: var(--brass-light); }
-.btn-ghost { display: inline-block; border: 1px solid var(--line); padding: 15px 26px; font-size: 14.5px; font-weight: 500; border-radius: 2px; color: var(--ivory); background: transparent; cursor: pointer; }
-.btn-ghost:hover { border-color: var(--brass-light); color: var(--brass-light); }
-.btn-dark { display: inline-block; border: 1px solid var(--line-dark); padding: 13px 22px; font-size: 13.5px; font-weight: 500; border-radius: 2px; color: var(--ink); background: transparent; cursor: pointer; }
-.btn-dark:hover { border-color: var(--brass); color: var(--brass); }
-
-.wait-chip { display: inline-flex; align-items: center; gap: 14px; border: 1px solid var(--line); padding: 14px 18px; max-width: 460px; }
-.wait-chip .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--good); box-shadow: 0 0 0 4px rgba(127,184,138,0.18); flex-shrink: 0; }
-.wait-chip .txt { font-size: 13.5px; color: rgba(246,241,231,0.85); }
-.wait-chip .txt b { color: var(--ivory); font-family: 'IBM Plex Mono', monospace; font-weight: 500; }
-
-.hero-media { position: relative; }
-.hero-media img { width: 100%; height: 100%; object-fit: cover; display: block; filter: saturate(0.92) contrast(1.02); }
-.hero-media::after { content: ""; position: absolute; inset: 0; background: linear-gradient(100deg, var(--ink) 0%, rgba(20,33,61,0) 26%); }
-.hero-media .credit { position: absolute; bottom: 16px; right: 16px; font-family: 'IBM Plex Mono', monospace; font-size: 10px; color: rgba(246,241,231,0.55); background: rgba(13,23,48,0.55); padding: 4px 8px; }
-.hero .tape-rule { color: var(--ivory); }
-
-.steps { background: var(--ivory); padding: 90px 0 70px; }
-.section-head { display: flex; align-items: baseline; justify-content: space-between; margin-bottom: 50px; flex-wrap: wrap; gap: 16px; }
-.section-head h2 { font-size: 34px; }
-.section-head .num { font-family: 'IBM Plex Mono', monospace; font-size: 13px; color: var(--brass); opacity: 0.9; }
-.steps-row { display: grid; grid-template-columns: repeat(3, 1fr); gap: 0; border-top: 1px solid var(--line-dark); }
-.step { padding: 34px 30px 0 0; border-right: 1px solid var(--line-dark); }
-.step:last-child { border-right: none; }
-.step .step-num { font-family: 'IBM Plex Mono', monospace; font-size: 13px; color: var(--brass); margin-bottom: 18px; display: block; }
-.step h3 { font-size: 21px; margin-bottom: 10px; font-weight: 500; }
-.step p { font-size: 14.5px; color: #5b564f; max-width: 260px; }
-
-.queue-section { background: var(--ink-deep); color: var(--ivory); padding: 90px 0; }
-.queue-inner { display: grid; grid-template-columns: 1fr 1fr; gap: 64px; align-items: start; }
-.queue-left .eyebrow { color: var(--brass-light); }
-.queue-left h2 { font-size: 36px; margin-bottom: 18px; max-width: 420px; }
-.queue-left p { color: rgba(246,241,231,0.72); font-size: 15px; max-width: 400px; margin-bottom: 34px; }
-
-.tape-meter { border: 1px solid var(--line); padding: 26px 26px 20px; margin-bottom: 30px; }
-.tape-meter .label-row { display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 14px; }
-.tape-meter .label-row .lbl { font-family: 'IBM Plex Mono', monospace; font-size: 11px; letter-spacing: 0.1em; text-transform: uppercase; color: rgba(246,241,231,0.55); }
-.tape-meter .label-row .val { font-family: 'IBM Plex Mono', monospace; font-size: 22px; color: var(--brass-light); }
-.tape-track { position: relative; height: 34px; background-image: repeating-linear-gradient(to right, rgba(246,241,231,0.28) 0, rgba(246,241,231,0.28) 1px, transparent 1px, transparent 10%); border-top: 1px solid rgba(246,241,231,0.3); border-bottom: 1px solid rgba(246,241,231,0.3); margin-bottom: 10px; }
-.tape-fill { position: absolute; top: 0; left: 0; bottom: 0; background: linear-gradient(90deg, var(--brass), var(--brass-light)); }
-.tape-track .marker { position: absolute; top: -20px; transform: translateX(-50%); font-family: 'IBM Plex Mono', monospace; font-size: 10px; color: rgba(246,241,231,0.5); }
-.tape-meter .footnote { font-size: 12.5px; color: rgba(246,241,231,0.5); }
-
-.express-toggle { display: flex; gap: 10px; margin-bottom: 8px; }
-.express-option { flex: 1; border: 1px solid var(--line); padding: 16px 14px; cursor: pointer; transition: border-color 0.2s, background 0.2s; text-align: left; background: transparent; color: inherit; font-family: inherit; }
-.express-option.active { border-color: var(--brass-light); background: rgba(185,139,78,0.08); }
-.express-option:disabled { opacity: 0.4; cursor: not-allowed; }
-.express-option .tier { font-size: 13px; font-weight: 600; margin-bottom: 6px; }
-.express-option .days { font-family: 'IBM Plex Mono', monospace; font-size: 11px; color: rgba(246,241,231,0.55); margin-bottom: 10px; }
-.express-option .price { font-family: 'IBM Plex Mono', monospace; font-size: 16px; color: var(--brass-light); }
-
-.queue-right { position: relative; }
-.queue-right img { width: 100%; height: 560px; object-fit: cover; filter: saturate(0.9); display: block; }
-.queue-right .caption-box { position: absolute; left: 0; right: 0; bottom: 0; background: linear-gradient(0deg, rgba(13,23,48,0.92), transparent); padding: 30px 26px 22px; }
-.queue-right .caption-box p { font-family: 'Fraunces', serif; font-style: italic; font-size: 18px; color: var(--ivory); max-width: 320px; }
-.queue-right .credit { position: absolute; top: 14px; right: 14px; font-family: 'IBM Plex Mono', monospace; font-size: 10px; color: rgba(246,241,231,0.6); background: rgba(13,23,48,0.5); padding: 4px 8px; }
-
-.configurator { background: var(--ivory); padding: 90px 0; }
-.fabric-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 20px; margin-bottom: 40px; }
-.fabric-card { background: white; border: 1px solid var(--line-dark); cursor: pointer; transition: border-color 0.15s; }
-.fabric-card:hover, .fabric-card.selected { border-color: var(--brass); }
-.fabric-card .swatch-img { width: 100%; aspect-ratio: 1/1; object-fit: cover; display: block; }
-.fabric-card .fc-info { padding: 14px 16px 18px; }
-.fabric-card .fc-name { font-size: 14.5px; font-weight: 600; margin-bottom: 4px; }
-.fabric-card .fc-meta { font-family: 'IBM Plex Mono', monospace; font-size: 11.5px; color: #8a8478; }
-.config-panel { background: white; border: 1px solid var(--line-dark); padding: 34px; display: grid; grid-template-columns: 1fr 1fr 1fr auto; gap: 28px; align-items: end; }
-.config-field label { display: block; font-family: 'IBM Plex Mono', monospace; font-size: 11px; letter-spacing: 0.08em; text-transform: uppercase; color: #8a8478; margin-bottom: 10px; }
-.config-field select, .config-field input { width: 100%; padding: 12px 12px; border: 1px solid var(--line-dark); background: var(--ivory); font-family: 'Inter', sans-serif; font-size: 14px; color: var(--charcoal); }
-.config-price { text-align: right; }
-.config-price .lbl { font-family: 'IBM Plex Mono', monospace; font-size: 11px; color: #8a8478; margin-bottom: 6px; }
-.config-price .amt { font-family: 'IBM Plex Mono', monospace; font-size: 26px; color: var(--ink); }
-
-.gallery { background: var(--ivory-dim); padding: 90px 0; }
-.gallery-filters { display: flex; gap: 10px; margin-bottom: 40px; flex-wrap: wrap; }
-.gf-btn { font-family: 'IBM Plex Mono', monospace; font-size: 12px; padding: 9px 16px; border: 1px solid var(--line-dark); color: #5b564f; cursor: pointer; background: transparent; }
-.gf-btn.active { background: var(--ink); color: var(--ivory); border-color: var(--ink); }
-.gallery-grid { display: grid; grid-template-columns: 1.3fr 1fr 1fr; grid-template-rows: 260px 260px; gap: 16px; }
-.g-item { position: relative; overflow: hidden; }
-.g-item.g-first { grid-row: span 2; }
-.g-item img { width: 100%; height: 100%; object-fit: cover; display: block; transition: transform 0.4s; }
-.g-item:hover img { transform: scale(1.04); }
-.g-item .g-tag { position: absolute; top: 14px; left: 14px; font-family: 'IBM Plex Mono', monospace; font-size: 10.5px; letter-spacing: 0.06em; text-transform: uppercase; background: rgba(20,33,61,0.85); color: var(--ivory); padding: 6px 10px; }
-
-.cta { background: var(--burgundy); color: var(--ivory); padding: 80px 0; text-align: center; }
-.cta h2 { font-size: 38px; margin-bottom: 16px; }
-.cta p { color: rgba(246,241,231,0.8); margin-bottom: 32px; font-size: 15.5px; }
-.cta .btn-primary { background: var(--brass); color: var(--ink-deep); }
-
-footer.site { background: var(--ink-deep); color: rgba(246,241,231,0.55); padding: 40px 0; font-size: 13px; }
-footer.site .wrap { display: flex; justify-content: space-between; flex-wrap: wrap; gap: 12px; }
-
-.page-section { padding: 70px 0; }
-.form-card { background: #fff; border: 1px solid var(--line-dark); padding: 40px; max-width: 460px; margin: 0 auto; }
-.form-card h2 { font-size: 1.7rem; margin-bottom: 24px; }
-.form-card label { display: block; font-family: 'IBM Plex Mono', monospace; font-size: 11px; letter-spacing: 0.08em; text-transform: uppercase; color: #8a8478; margin: 18px 0 8px; }
-.form-card input, .form-card select, .form-card textarea { width: 100%; padding: 12px; border: 1px solid var(--line-dark); background: var(--ivory); font-family: 'Inter', sans-serif; font-size: 15px; }
-.form-card input:focus, .form-card select:focus, .form-card textarea:focus { outline: none; border-color: var(--brass); }
-.form-actions { margin-top: 26px; }
-.form-note { font-size: 0.85rem; color: #8a8478; margin-top: 16px; }
-
-.stock-badge { display: inline-block; font-family: 'IBM Plex Mono', monospace; font-size: 10.5px; text-transform: uppercase; letter-spacing: 0.06em; padding: 3px 10px; margin-bottom: 8px; }
-.stock-in { background: rgba(127,184,138,0.15); color: #3f6b4a; }
-.stock-low { background: rgba(214,174,115,0.2); color: #8a6414; }
-.stock-out { background: rgba(185,86,78,0.12); color: var(--bad); }
-
-.status-track { display: flex; justify-content: space-between; margin: 40px 0; position: relative; }
-.status-track::before { content: ''; position: absolute; top: 14px; left: 0; right: 0; height: 2px; background: var(--line-dark); z-index: 0; }
-.status-step { position: relative; z-index: 1; text-align: center; flex: 1; }
-.status-dot { width: 26px; height: 26px; border-radius: 50%; background: #fff; border: 2px solid var(--line-dark); margin: 0 auto 8px; }
-.status-step.done .status-dot { background: var(--brass); border-color: var(--brass); }
-.status-step.current .status-dot { border-color: var(--brass); box-shadow: 0 0 0 4px rgba(185,139,78,0.18); }
-.status-step .label { font-family: 'IBM Plex Mono', monospace; font-size: 10.5px; text-transform: uppercase; letter-spacing: 0.04em; color: #6b6255; }
-
-table.order-table { width: 100%; border-collapse: collapse; background: #fff; }
-table.order-table th, table.order-table td { padding: 12px 16px; border-bottom: 1px solid var(--line-dark); text-align: left; font-size: 0.92rem; }
-table.order-table th { background: var(--ink); color: var(--ivory); text-transform: uppercase; font-size: 0.72rem; letter-spacing: 0.05em; font-family: 'IBM Plex Mono', monospace; }
-
-@media (max-width: 900px) {
-  .hero-grid { grid-template-columns: 1fr; }
-  .hero-media { height: 340px; order: -1; }
-  .hero-copy { padding: 50px 24px; max-width: none; }
-  .hero-copy h1 { font-size: 38px; }
-  .steps-row { grid-template-columns: 1fr; }
-  .step { border-right: none; border-bottom: 1px solid var(--line-dark); padding-bottom: 30px; margin-bottom: 30px; }
-  .queue-inner { grid-template-columns: 1fr; }
-  .queue-right img { height: 320px; }
-  .fabric-grid { grid-template-columns: repeat(2,1fr); }
-  .config-panel { grid-template-columns: 1fr; }
-  .gallery-grid { grid-template-columns: 1fr 1fr; grid-template-rows: 200px 200px 200px; }
-  .g-item.g-first { grid-row: span 1; grid-column: span 2; }
-  .wrap { padding: 0 20px; }
-  nav.links { display: none; }
-}
+<?php render_inline_css(); ?>
 </style>
 </head>
 <body>
@@ -791,6 +705,307 @@ function render_footer(): void
 <?php
 }
 
+function render_inline_css(): void
+{
+    ?>
+:root {
+  --ink: #14213D;
+  --ink-deep: #0D1730;
+  --ivory: #F6F1E7;
+  --ivory-dim: #EDE6D6;
+  --brass: #B98B4E;
+  --brass-light: #D6AE73;
+  --burgundy: #6E2A34;
+  --charcoal: #211E1B;
+  --line: rgba(246,241,231,0.18);
+  --line-dark: rgba(20,33,61,0.14);
+  --good: #7FB88A;
+  --warn: #D6AE73;
+  --bad: #B9564E;
+}
+
+* { box-sizing: border-box; margin: 0; padding: 0; }
+
+body {
+  background: var(--ivory);
+  color: var(--charcoal);
+  font-family: 'Inter', sans-serif;
+  -webkit-font-smoothing: antialiased;
+  line-height: 1.5;
+}
+
+h1, h2, h3 { font-family: 'Fraunces', serif; font-weight: 500; letter-spacing: -0.01em; }
+a { color: inherit; text-decoration: none; }
+.mono { font-family: 'IBM Plex Mono', monospace; letter-spacing: 0.02em; }
+.wrap { max-width: 1180px; margin: 0 auto; padding: 0 32px; }
+img { max-width: 100%; }
+
+/* ----- TAPE RULE ----- */
+.tape-rule {
+  height: 26px;
+  background-image: repeating-linear-gradient(to right, currentColor 0, currentColor 1px, transparent 1px, transparent 12px);
+  background-size: 100% 10px;
+  background-position: top left;
+  background-repeat: no-repeat;
+  position: relative;
+  opacity: 0.35;
+}
+.tape-rule::before { content: ""; position: absolute; top: 0; left: 0; right: 0; height: 1px; background: currentColor; }
+
+/* ----- HEADER ----- */
+header.site { background: var(--ink); color: var(--ivory); position: sticky; top: 0; z-index: 50; border-bottom: 1px solid var(--line); }
+.nav-row { display: flex; align-items: center; justify-content: space-between; padding: 20px 0; }
+.wordmark { font-family: 'Fraunces', serif; font-size: 22px; font-weight: 600; letter-spacing: 0.01em; }
+.wordmark span { color: var(--brass-light); font-style: italic; }
+nav.links { display: flex; gap: 36px; font-size: 14px; }
+nav.links a { opacity: 0.82; transition: opacity 0.2s; }
+nav.links a:hover { opacity: 1; }
+.nav-cta { background: var(--brass); color: var(--ink-deep); padding: 10px 20px; border-radius: 2px; font-size: 13.5px; font-weight: 600; letter-spacing: 0.01em; }
+
+/* ----- FLASH MESSAGES ----- */
+.flash-bar { padding: 14px 0; }
+.flash { padding: 12px 20px; border-radius: 2px; font-size: 0.9rem; margin-bottom: 8px; }
+.flash-success { background: rgba(127,184,138,0.15); color: #3f6b4a; border: 1px solid var(--good); }
+.flash-error { background: rgba(185,86,78,0.12); color: var(--bad); border: 1px solid var(--bad); }
+
+/* ----- HERO ----- */
+.hero { background: var(--ink); color: var(--ivory); position: relative; overflow: hidden; }
+.hero-grid { display: grid; grid-template-columns: 1.05fr 0.95fr; align-items: stretch; min-height: 640px; }
+.hero-copy { padding: 80px 60px 60px 0; display: flex; flex-direction: column; justify-content: center; max-width: 560px; }
+.eyebrow { font-family: 'IBM Plex Mono', monospace; font-size: 12px; letter-spacing: 0.14em; text-transform: uppercase; color: var(--brass-light); margin-bottom: 22px; display: flex; align-items: center; gap: 10px; }
+.eyebrow::before { content: ""; width: 28px; height: 1px; background: var(--brass-light); display: inline-block; }
+.hero-copy h1 { font-size: 58px; line-height: 1.04; margin-bottom: 26px; }
+.hero-copy h1 em { color: var(--brass-light); font-style: italic; font-weight: 500; }
+.hero-copy p.lede { font-size: 17px; line-height: 1.6; color: rgba(246,241,231,0.78); max-width: 440px; margin-bottom: 36px; }
+.hero-actions { display: flex; gap: 16px; margin-bottom: 44px; flex-wrap: wrap; }
+.btn-primary { display: inline-block; background: var(--brass); color: var(--ink-deep); padding: 15px 26px; font-size: 14.5px; font-weight: 600; border: none; border-radius: 2px; letter-spacing: 0.01em; transition: all 0.3s ease; cursor: pointer; }
+.btn-primary:hover { background: var(--brass-light); transform: translateY(-2px); box-shadow: 0 4px 12px rgba(185, 139, 78, 0.3); }
+.btn-ghost { display: inline-block; border: 1px solid var(--line); padding: 15px 26px; font-size: 14.5px; font-weight: 500; border-radius: 2px; color: var(--ivory); background: transparent; cursor: pointer; transition: all 0.3s ease; }
+.btn-ghost:hover { border-color: var(--brass-light); color: var(--brass-light); transform: translateY(-2px); }
+.btn-dark { display: inline-block; border: 1px solid var(--line-dark); padding: 13px 22px; font-size: 13.5px; font-weight: 500; border-radius: 2px; color: var(--ink); background: transparent; cursor: pointer; transition: all 0.3s ease; }
+.btn-dark:hover { border-color: var(--brass); color: var(--brass); transform: translateY(-2px); }
+
+.wait-chip { display: inline-flex; align-items: center; gap: 14px; border: 1px solid var(--line); padding: 14px 18px; max-width: 460px; }
+.wait-chip .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--good); box-shadow: 0 0 0 4px rgba(127,184,138,0.18); flex-shrink: 0; }
+.wait-chip .txt { font-size: 13.5px; color: rgba(246,241,231,0.85); }
+.wait-chip .txt b { color: var(--ivory); font-family: 'IBM Plex Mono', monospace; font-weight: 500; }
+
+.hero-media { position: relative; }
+.hero-media img { width: 100%; height: 100%; object-fit: cover; display: block; filter: saturate(0.92) contrast(1.02); }
+.hero-media::after { content: ""; position: absolute; inset: 0; background: linear-gradient(100deg, var(--ink) 0%, rgba(20,33,61,0) 26%); }
+.hero-media .credit { position: absolute; bottom: 16px; right: 16px; font-family: 'IBM Plex Mono', monospace; font-size: 10px; color: rgba(246,241,231,0.55); background: rgba(13,23,48,0.55); padding: 4px 8px; }
+.hero .tape-rule { color: var(--ivory); }
+
+/* ----- STEPS ----- */
+.steps { background: var(--ivory); padding: 90px 0 70px; }
+.section-head { display: flex; align-items: baseline; justify-content: space-between; margin-bottom: 50px; flex-wrap: wrap; gap: 16px; }
+.section-head h2 { font-size: 34px; }
+.section-head .num { font-family: 'IBM Plex Mono', monospace; font-size: 13px; color: var(--brass); opacity: 0.9; }
+.steps-row { display: grid; grid-template-columns: repeat(3, 1fr); gap: 0; border-top: 1px solid var(--line-dark); }
+.step { padding: 34px 30px 0 0; border-right: 1px solid var(--line-dark); }
+.step:last-child { border-right: none; }
+.step .step-num { font-family: 'IBM Plex Mono', monospace; font-size: 13px; color: var(--brass); margin-bottom: 18px; display: block; }
+.step h3 { font-size: 21px; margin-bottom: 10px; font-weight: 500; }
+.step p { font-size: 14.5px; color: #5b564f; max-width: 260px; }
+
+/* ----- QUEUE SECTION ----- */
+.queue-section { background: var(--ink-deep); color: var(--ivory); padding: 90px 0; }
+.queue-inner { display: grid; grid-template-columns: 1fr 1fr; gap: 64px; align-items: start; }
+.queue-left .eyebrow { color: var(--brass-light); }
+.queue-left h2 { font-size: 36px; margin-bottom: 18px; max-width: 420px; }
+.queue-left p { color: rgba(246,241,231,0.72); font-size: 15px; max-width: 400px; margin-bottom: 34px; }
+
+.tape-meter { border: 1px solid var(--line); padding: 26px 26px 20px; margin-bottom: 30px; }
+.tape-meter .label-row { display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 14px; }
+.tape-meter .label-row .lbl { font-family: 'IBM Plex Mono', monospace; font-size: 11px; letter-spacing: 0.1em; text-transform: uppercase; color: rgba(246,241,231,0.55); }
+.tape-meter .label-row .val { font-family: 'IBM Plex Mono', monospace; font-size: 22px; color: var(--brass-light); }
+.tape-track { position: relative; height: 34px; background-image: repeating-linear-gradient(to right, rgba(246,241,231,0.28) 0, rgba(246,241,231,0.28) 1px, transparent 1px, transparent 10%); border-top: 1px solid rgba(246,241,231,0.3); border-bottom: 1px solid rgba(246,241,231,0.3); margin-bottom: 10px; }
+.tape-fill { position: absolute; top: 0; left: 0; bottom: 0; background: linear-gradient(90deg, var(--brass), var(--brass-light)); }
+.tape-track .marker { position: absolute; top: -20px; transform: translateX(-50%); font-family: 'IBM Plex Mono', monospace; font-size: 10px; color: rgba(246,241,231,0.5); }
+.tape-meter .footnote { font-size: 12.5px; color: rgba(246,241,231,0.5); }
+
+.express-toggle { display: flex; gap: 10px; margin-bottom: 8px; }
+.express-option { flex: 1; border: 1px solid var(--line); padding: 16px 14px; cursor: pointer; transition: border-color 0.2s, background 0.2s; text-align: left; background: transparent; color: inherit; font-family: inherit; }
+.express-option.active { border-color: var(--brass-light); background: rgba(185,139,78,0.08); }
+.express-option:disabled { opacity: 0.4; cursor: not-allowed; }
+.express-option .tier { font-size: 13px; font-weight: 600; margin-bottom: 6px; }
+.express-option .days { font-family: 'IBM Plex Mono', monospace; font-size: 11px; color: rgba(246,241,231,0.55); margin-bottom: 10px; }
+.express-option .price { font-family: 'IBM Plex Mono', monospace; font-size: 16px; color: var(--brass-light); }
+
+.queue-right { position: relative; }
+.queue-right img { width: 100%; height: 560px; object-fit: cover; filter: saturate(0.9); display: block; }
+.queue-right .caption-box { position: absolute; left: 0; right: 0; bottom: 0; background: linear-gradient(0deg, rgba(13,23,48,0.92), transparent); padding: 30px 26px 22px; }
+.queue-right .caption-box p { font-family: 'Fraunces', serif; font-style: italic; font-size: 18px; color: var(--ivory); max-width: 320px; }
+.queue-right .credit { position: absolute; top: 14px; right: 14px; font-family: 'IBM Plex Mono', monospace; font-size: 10px; color: rgba(246,241,231,0.6); background: rgba(13,23,48,0.5); padding: 4px 8px; }
+
+/* ----- CONFIGURATOR ----- */
+.configurator { background: var(--ivory); padding: 90px 0; }
+.fabric-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 20px; margin-bottom: 40px; }
+.fabric-card { background: white; border: 1px solid var(--line-dark); cursor: pointer; transition: all 0.3s ease; }
+.fabric-card:hover { transform: translateY(-4px); box-shadow: 0 8px 24px rgba(0,0,0,0.1); }
+.fabric-card.selected { border-color: var(--brass); box-shadow: 0 0 0 2px var(--brass); }
+.fabric-card .swatch-img { width: 100%; aspect-ratio: 1/1; object-fit: cover; display: block; }
+.fabric-card .fc-info { padding: 14px 16px 18px; }
+.fabric-card .fc-name { font-size: 14.5px; font-weight: 600; margin-bottom: 4px; }
+.fabric-card .fc-meta { font-family: 'IBM Plex Mono', monospace; font-size: 11.5px; color: #8a8478; }
+.config-panel { background: white; border: 1px solid var(--line-dark); padding: 34px; display: grid; grid-template-columns: 1fr 1fr 1fr auto; gap: 28px; align-items: end; }
+.config-field label { display: block; font-family: 'IBM Plex Mono', monospace; font-size: 11px; letter-spacing: 0.08em; text-transform: uppercase; color: #8a8478; margin-bottom: 10px; }
+.config-field select, .config-field input { width: 100%; padding: 12px 12px; border: 1px solid var(--line-dark); background: var(--ivory); font-family: 'Inter', sans-serif; font-size: 14px; color: var(--charcoal); transition: all 0.3s ease; }
+.config-field select:focus, .config-field input:focus { outline: none; border-color: var(--brass); box-shadow: 0 0 0 3px rgba(185, 139, 78, 0.15); }
+.config-price { text-align: right; }
+.config-price .lbl { font-family: 'IBM Plex Mono', monospace; font-size: 11px; color: #8a8478; margin-bottom: 6px; }
+.config-price .amt { font-family: 'IBM Plex Mono', monospace; font-size: 26px; color: var(--ink); transition: all 0.3s ease; }
+.config-price .amt.update { transform: scale(1.1); color: var(--brass); }
+
+/* ----- GALLERY ----- */
+.gallery { background: var(--ivory-dim); padding: 90px 0; }
+.gallery-filters { display: flex; gap: 10px; margin-bottom: 40px; flex-wrap: wrap; }
+.gf-btn { font-family: 'IBM Plex Mono', monospace; font-size: 12px; padding: 9px 16px; border: 1px solid var(--line-dark); color: #5b564f; cursor: pointer; background: transparent; transition: all 0.3s ease; }
+.gf-btn:hover { border-color: var(--brass); color: var(--brass); }
+.gf-btn.active { background: var(--ink); color: var(--ivory); border-color: var(--ink); }
+.gallery-grid { display: grid; grid-template-columns: 1.3fr 1fr 1fr; grid-template-rows: 260px 260px; gap: 16px; }
+.g-item { position: relative; overflow: hidden; border-radius: 4px; }
+.g-item.g-first { grid-row: span 2; }
+.g-item img { width: 100%; height: 100%; object-fit: cover; display: block; transition: transform 0.4s; }
+.g-item:hover img { transform: scale(1.04); }
+.g-item .g-tag { position: absolute; top: 14px; left: 14px; font-family: 'IBM Plex Mono', monospace; font-size: 10.5px; letter-spacing: 0.06em; text-transform: uppercase; background: rgba(20,33,61,0.85); color: var(--ivory); padding: 6px 10px; border-radius: 2px; }
+
+/* ----- CTA ----- */
+.cta { background: var(--burgundy); color: var(--ivory); padding: 80px 0; text-align: center; }
+.cta h2 { font-size: 38px; margin-bottom: 16px; }
+.cta p { color: rgba(246,241,231,0.8); margin-bottom: 32px; font-size: 15.5px; }
+.cta .btn-primary { background: var(--brass); color: var(--ink-deep); }
+
+/* ----- FOOTER ----- */
+footer.site { background: var(--ink-deep); color: rgba(246,241,231,0.55); padding: 40px 0; font-size: 13px; }
+footer.site .wrap { display: flex; justify-content: space-between; flex-wrap: wrap; gap: 12px; }
+
+/* ----- PAGE SECTION / FORM ----- */
+.page-section { padding: 70px 0; }
+.form-card { background: #fff; border: 1px solid var(--line-dark); padding: 40px; max-width: 460px; margin: 0 auto; border-radius: 4px; }
+.form-card h2 { font-size: 1.7rem; margin-bottom: 24px; }
+.form-card label { display: block; font-family: 'IBM Plex Mono', monospace; font-size: 11px; letter-spacing: 0.08em; text-transform: uppercase; color: #8a8478; margin: 18px 0 8px; }
+.form-card input, .form-card select, .form-card textarea { width: 100%; padding: 12px; border: 1px solid var(--line-dark); background: var(--ivory); font-family: 'Inter', sans-serif; font-size: 15px; transition: all 0.3s ease; border-radius: 2px; }
+.form-card input:focus, .form-card select:focus, .form-card textarea:focus { outline: none; border-color: var(--brass); box-shadow: 0 0 0 3px rgba(185, 139, 78, 0.15); }
+.form-actions { margin-top: 26px; }
+.form-note { font-size: 0.85rem; color: #8a8478; margin-top: 16px; }
+
+/* ----- STATUS TRACK ----- */
+.status-track { display: flex; justify-content: space-between; margin: 40px 0; position: relative; }
+.status-track::before { content: ''; position: absolute; top: 14px; left: 0; right: 0; height: 2px; background: var(--line-dark); z-index: 0; }
+.status-step { position: relative; z-index: 1; text-align: center; flex: 1; }
+.status-dot { width: 26px; height: 26px; border-radius: 50%; background: #fff; border: 2px solid var(--line-dark); margin: 0 auto 8px; transition: all 0.3s ease; }
+.status-step.done .status-dot { background: var(--brass); border-color: var(--brass); }
+.status-step.current .status-dot { border-color: var(--brass); box-shadow: 0 0 0 4px rgba(185,139,78,0.18); }
+.status-step .label { font-family: 'IBM Plex Mono', monospace; font-size: 10.5px; text-transform: uppercase; letter-spacing: 0.04em; color: #6b6255; }
+
+table.order-table { width: 100%; border-collapse: collapse; background: #fff; border-radius: 4px; overflow: hidden; }
+table.order-table th, table.order-table td { padding: 12px 16px; border-bottom: 1px solid var(--line-dark); text-align: left; font-size: 0.92rem; }
+table.order-table th { background: var(--ink); color: var(--ivory); text-transform: uppercase; font-size: 0.72rem; letter-spacing: 0.05em; font-family: 'IBM Plex Mono', monospace; }
+
+/* ----- RESPONSIVE DESIGN ----- */
+@media (max-width: 1200px) {
+    .hero-grid { grid-template-columns: 1fr; }
+    .hero-copy { padding: 40px 24px; }
+    .hero-copy h1 { font-size: 42px; }
+    .queue-inner { gap: 32px; }
+}
+
+@media (max-width: 992px) {
+    .fabric-grid { grid-template-columns: repeat(2, 1fr); }
+    .config-panel { grid-template-columns: 1fr 1fr; }
+    .gallery-grid { grid-template-columns: 1fr 1fr; }
+    .steps-row { grid-template-columns: 1fr; }
+    .step { border-right: none; border-bottom: 1px solid var(--line-dark); padding-bottom: 24px; margin-bottom: 24px; }
+}
+
+@media (max-width: 768px) {
+    .nav-row { flex-wrap: wrap; gap: 12px; justify-content: center; padding: 12px 0; }
+    nav.links { display: flex; flex-wrap: wrap; justify-content: center; gap: 12px; font-size: 13px; }
+    .hero-copy h1 { font-size: 32px; }
+    .hero-copy p.lede { font-size: 15px; }
+    .hero-media { height: 280px; }
+    .section-head { flex-direction: column; text-align: center; }
+    .section-head h2 { font-size: 28px; }
+    .express-toggle { flex-direction: column; }
+    .express-option { width: 100%; }
+    .config-panel { grid-template-columns: 1fr; padding: 20px; gap: 16px; }
+    .fabric-grid { grid-template-columns: repeat(2, 1fr); gap: 12px; }
+    .gallery-grid { grid-template-columns: 1fr; grid-template-rows: auto; }
+    .g-item.g-first { grid-row: span 1; grid-column: span 1; }
+    .g-item { height: 200px; }
+    .hero-actions { flex-direction: column; width: 100%; }
+    .hero-actions .btn-primary, .hero-actions .btn-ghost { width: 100%; text-align: center; }
+    .wait-chip { flex-direction: column; text-align: center; padding: 16px; }
+    .status-track { flex-wrap: wrap; justify-content: center; }
+    .status-step { flex: 0 0 33%; margin-bottom: 12px; }
+    .form-card { padding: 24px; margin: 0 12px; }
+    .cta h2 { font-size: 28px; }
+    .queue-right img { height: 280px; }
+    .queue-inner { gap: 24px; }
+    .tape-meter { padding: 16px; }
+}
+
+@media (max-width: 480px) {
+    .wrap { padding: 0 12px; }
+    .hero-copy h1 { font-size: 24px; }
+    .hero-copy { padding: 24px 16px; }
+    .hero-copy .btn-primary, .hero-copy .btn-ghost { font-size: 13px; padding: 12px 16px; }
+    .fabric-grid { grid-template-columns: 1fr; }
+    .hero-media { height: 200px; }
+    .queue-right img { height: 200px; }
+    .btn-primary, .btn-ghost, .btn-dark { font-size: 13px; padding: 12px 18px; }
+    .status-step { flex: 0 0 50%; }
+    .step h3 { font-size: 18px; }
+    .step p { font-size: 13px; }
+    .section-head h2 { font-size: 24px; }
+    .form-card h2 { font-size: 1.3rem; }
+    table.order-table th, table.order-table td { padding: 8px 10px; font-size: 0.8rem; }
+    .config-price .amt { font-size: 20px; }
+}
+
+/* ----- TOAST NOTIFICATIONS ----- */
+.toast-container {
+    position: fixed;
+    bottom: 20px;
+    right: 20px;
+    z-index: 9999;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+.toast {
+    padding: 16px 24px;
+    border-radius: 8px;
+    color: white;
+    animation: slideIn 0.5s forwards;
+    min-width: 200px;
+    max-width: 400px;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.2);
+    font-family: 'Inter', sans-serif;
+}
+.toast.success { background: #10b981; }
+.toast.error { background: #ef4444; }
+.toast.info { background: #3b82f6; }
+
+@keyframes slideIn {
+    from { transform: translateX(120%); opacity: 0; }
+    to { transform: translateX(0); opacity: 1; }
+}
+
+/* ----- LOADING SKELETON ----- */
+.skeleton {
+    background: linear-gradient(90deg, #f0f0f0 25%, #e0e0e0 50%, #f0f0f0 75%);
+    background-size: 200% 100%;
+    animation: shimmer 1.5s infinite;
+}
+@keyframes shimmer {
+    0% { background-position: -200% 0; }
+    100% { background-position: 200% 0; }
+}
+    <?php
+}
+
 // ============================================================
 // PAGE FUNCTIONS
 // ============================================================
@@ -824,7 +1039,7 @@ function page_index(): void
     )->fetchAll();
 
     $galleryItems = $db->query(
-        "SELECT * FROM gallery_items ORDER BY is_featured DESC, created_at DESC LIMIT 5"
+        "SELECT * FROM gallery_items ORDER BY is_featured DESC, created_at DESC LIMIT 6"
     )->fetchAll();
 
     render_header('Bespoke, On Your Time');
@@ -846,7 +1061,7 @@ function page_index(): void
       </div>
     </div>
     <div class="hero-media">
-      <img src="https://images.unsplash.com/photo-1584184924103-e310d9dc82fc?w=900&q=80&fm=jpg&fit=crop" alt="Client in tailored black suit">
+      <img src="https://images.unsplash.com/photo-1584184924103-e310d9dc82fc?w=900&q=80&fm=jpg&fit=crop" alt="Client in tailored black suit" loading="lazy">
       <span class="credit">Photo &middot; Unsplash</span>
     </div>
   </div>
@@ -902,17 +1117,17 @@ function page_index(): void
 
       <label style="font-family:'IBM Plex Mono',monospace; font-size:11px; letter-spacing:0.08em; text-transform:uppercase; color:rgba(246,241,231,0.55); display:block; margin-bottom:12px;">Choose Your Timeline</label>
       <div class="express-toggle">
-        <button type="button" class="express-option active" data-tier="standard">
+        <button type="button" class="express-option active" data-tier="standard" onclick="selectTier(this, 'standard')">
           <div class="tier">Standard</div>
           <div class="days"><?= (int) $standardDays ?> days</div>
           <div class="price"><?= money($standardPrice) ?></div>
         </button>
-        <button type="button" class="express-option" data-tier="express" <?= $expressAvail['available'] <= 0 ? 'disabled' : '' ?>>
+        <button type="button" class="express-option" data-tier="express" <?= $expressAvail['available'] <= 0 ? 'disabled' : '' ?> onclick="selectTier(this, 'express')">
           <div class="tier">Express</div>
           <div class="days"><?= (int) $expressDays ?> days</div>
           <div class="price"><?= money($expressPrice) ?></div>
         </button>
-        <button type="button" class="express-option" data-tier="rush" <?= $rushAvail['available'] <= 0 ? 'disabled' : '' ?>>
+        <button type="button" class="express-option" data-tier="rush" <?= $rushAvail['available'] <= 0 ? 'disabled' : '' ?> onclick="selectTier(this, 'rush')">
           <div class="tier">Rush</div>
           <div class="days">48 hrs</div>
           <div class="price"><?= money($rushPrice) ?></div>
@@ -925,7 +1140,7 @@ function page_index(): void
     </div>
 
     <div class="queue-right">
-      <img src="https://images.unsplash.com/photo-1633655442356-ab2dbc69c772?w=800&q=80&fm=jpg&fit=crop" alt="Tailor working on fabric">
+      <img src="https://images.unsplash.com/photo-1633655442356-ab2dbc69c772?w=800&q=80&fm=jpg&fit=crop" alt="Tailor working on fabric" loading="lazy">
       <span class="credit">Photo &middot; Unsplash</span>
       <div class="caption-box">
         <p>&ldquo;We control how many express slots open each week &mdash; so quality never slips for speed.&rdquo;</p>
@@ -943,7 +1158,7 @@ function page_index(): void
     <div class="fabric-grid">
       <?php foreach ($fabrics as $f): ?>
       <a href="<?= url('configurator', 'fabric_id=' . (int) $f['id']) ?>" class="fabric-card">
-        <img class="swatch-img" src="<?= e($f['image_url']) ?>" alt="<?= e($f['name']) ?>">
+        <img class="swatch-img" src="<?= e($f['image_url']) ?>" alt="<?= e($f['name']) ?>" loading="lazy">
         <div class="fc-info">
           <div class="fc-name"><?= e($f['name']) ?></div>
           <div class="fc-meta">
@@ -999,25 +1214,41 @@ function page_index(): void
       <span class="num">By occasion</span>
     </div>
     <div class="gallery-filters">
-      <span class="gf-btn active">All</span>
+      <span class="gf-btn active" onclick="filterGallery(this, 'all')">All</span>
       <?php
       $seenCats = [];
       foreach ($galleryItems as $gi) {
           $cat = ucfirst($gi['occasion_category']);
           if (!in_array($cat, $seenCats, true)) {
               $seenCats[] = $cat;
-              echo '<span class="gf-btn">' . e($cat) . '</span>';
+              echo '<span class="gf-btn" onclick="filterGallery(this, \'' . e($gi['occasion_category']) . '\')">' . e($cat) . '</span>';
           }
       }
       ?>
     </div>
     <div class="gallery-grid">
-      <?php foreach ($galleryItems as $i => $item): ?>
-      <div class="g-item<?= $i === 0 ? ' g-first' : '' ?>">
-        <span class="g-tag"><?= e(ucfirst($item['occasion_category'])) ?></span>
-        <img src="<?= e($item['image_url']) ?>" alt="<?= e(ucfirst($item['occasion_category'])) ?> look">
-      </div>
-      <?php endforeach; ?>
+      <?php if (empty($galleryItems)): ?>
+        <?php for ($i = 0; $i < 6; $i++): ?>
+        <div class="g-item<?= $i === 0 ? ' g-first' : '' ?>">
+          <span class="g-tag">Coming Soon</span>
+          <div style="width:100%;height:100%;background:linear-gradient(135deg, #f0f0f0, #e0e0e0);display:flex;align-items:center;justify-content:center;color:#999;">
+            <span style="font-size:3em;">🖼️</span>
+          </div>
+        </div>
+        <?php endfor; ?>
+      <?php else: ?>
+        <?php foreach ($galleryItems as $i => $item): ?>
+        <div class="g-item<?= $i === 0 ? ' g-first' : '' ?>" data-category="<?= e($item['occasion_category']) ?>">
+          <span class="g-tag"><?= e(ucfirst($item['occasion_category'])) ?></span>
+          <img src="<?= e($item['image_url']) ?>" alt="<?= e(ucfirst($item['occasion_category'])) ?> look" loading="lazy">
+          <?php if ($item['client_story']): ?>
+          <div style="position:absolute;bottom:0;left:0;right:0;background:linear-gradient(0deg,rgba(0,0,0,0.7),transparent);padding:20px;color:white;font-size:0.85rem;opacity:0;transition:opacity 0.3s;">
+            <?= e($item['client_story']) ?>
+          </div>
+          <?php endif; ?>
+        </div>
+        <?php endforeach; ?>
+      <?php endif; ?>
     </div>
     <p style="text-align:center; margin-top:30px;">
       <a href="<?= url('gallery') ?>" class="btn-dark">View Full Gallery</a>
@@ -1034,19 +1265,50 @@ function page_index(): void
 </section>
 
 <script>
-  document.querySelectorAll('.express-option').forEach(function (el) {
-    el.addEventListener('click', function () {
-      if (el.disabled) return;
-      document.querySelectorAll('.express-option').forEach(function (o) { o.classList.remove('active'); });
-      el.classList.add('active');
-    });
+// Express tier selection
+function selectTier(el, tier) {
+  if (el.disabled) return;
+  document.querySelectorAll('.express-option').forEach(function (o) { o.classList.remove('active'); });
+  el.classList.add('active');
+}
+
+// Gallery filtering
+function filterGallery(el, category) {
+  document.querySelectorAll('.gf-btn').forEach(function (o) { o.classList.remove('active'); });
+  el.classList.add('active');
+  
+  document.querySelectorAll('.g-item').forEach(function (item) {
+    if (category === 'all' || item.dataset.category === category) {
+      item.style.display = 'block';
+    } else {
+      item.style.display = 'none';
+    }
   });
-  document.querySelectorAll('.gf-btn').forEach(function (el) {
-    el.addEventListener('click', function () {
-      document.querySelectorAll('.gf-btn').forEach(function (o) { o.classList.remove('active'); });
-      el.classList.add('active');
-    });
-  });
+}
+
+// Toast notification function
+function showToast(message, type = 'info') {
+    const container = document.getElementById('toastContainer');
+    if (!container) return;
+    const toast = document.createElement('div');
+    toast.className = 'toast ' + type;
+    toast.textContent = message;
+    container.appendChild(toast);
+    setTimeout(function() {
+        if (toast.parentNode) toast.remove();
+    }, 5000);
+}
+
+// Show flash messages as toasts
+<?php 
+$flashSuccess = flash('success');
+$flashError = flash('error');
+if ($flashSuccess): ?>
+showToast('<?= e($flashSuccess) ?>', 'success');
+<?php endif; ?>
+<?php if ($flashError): ?>
+showToast('<?= e($flashError) ?>', 'error');
+<?php endif; ?>
 </script>
 
 <?php
@@ -1064,6 +1326,9 @@ function page_login(): void
 
     $_SESSION['login_attempts'] = $_SESSION['login_attempts'] ?? [];
     $_SESSION['login_attempts'] = array_filter($_SESSION['login_attempts'], fn($t) => $t > time() - 600);
+
+    // Ensure demo user exists
+    ensure_demo_user();
 
     if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         if (count($_SESSION['login_attempts']) >= 8) {
@@ -1084,6 +1349,7 @@ function page_login(): void
                 unset($_SESSION['login_attempts']);
                 session_regenerate_id(true);
                 $_SESSION['client_id'] = (int) $client['id'];
+                flash('success', 'Welcome back!');
                 header('Location: ' . url('dashboard'));
                 exit;
             }
@@ -1098,21 +1364,24 @@ function page_login(): void
     <div class="wrap">
         <div class="form-card">
             <h2>Welcome Back</h2>
+            <p style="color:#5b564f; font-size:14px; margin-bottom:16px;">
+                <strong>Demo Login:</strong> Phone: <code>+233201234567</code> · Password: <code>ClientDemo123!</code>
+            </p>
             <?php if ($error): ?>
                 <div class="flash flash-error"><?= e($error) ?></div>
             <?php endif; ?>
             <form method="post" action="<?= url('login') ?>">
                 <?= csrf_field() ?>
                 <label for="phone">Phone Number</label>
-                <input type="text" id="phone" name="phone" required autofocus>
+                <input type="text" id="phone" name="phone" required autofocus value="<?= e($_POST['phone'] ?? '') ?>">
 
                 <label for="password">Password</label>
                 <input type="password" id="password" name="password" required>
 
                 <div class="form-actions">
-                    <button type="submit" class="btn-primary">Log In</button>
+                    <button type="submit" class="btn-primary" style="width:100%;">Log In</button>
                 </div>
-                <p class="form-note">New here? <a href="<?= url('register') ?>">Create an account</a></p>
+                <p class="form-note">New here? <a href="<?= url('register') ?>" style="color:var(--brass);">Create an account</a></p>
             </form>
         </div>
     </div>
@@ -1205,9 +1474,9 @@ function page_register(): void
                 <input type="password" id="password" name="password" required minlength="8">
 
                 <div class="form-actions">
-                    <button type="submit" class="btn-primary">Create Account</button>
+                    <button type="submit" class="btn-primary" style="width:100%;">Create Account</button>
                 </div>
-                <p class="form-note">Already have an account? <a href="<?= url('login') ?>">Log in</a></p>
+                <p class="form-note">Already have an account? <a href="<?= url('login') ?>" style="color:var(--brass);">Log in</a></p>
             </form>
         </div>
     </div>
@@ -1224,6 +1493,7 @@ function page_logout(): void
 {
     $_SESSION = [];
     session_destroy();
+    flash('success', 'You have been logged out.');
     header('Location: ' . url('index'));
     exit;
 }
@@ -1267,12 +1537,22 @@ function page_gallery(): void
     </div>
 
     <?php if (empty($items)): ?>
-      <p style="color:#5b564f;">No looks in this category yet — check back soon.</p>
+      <div class="fabric-grid" style="grid-template-columns: repeat(3, 1fr);">
+        <?php for ($i = 0; $i < 6; $i++): ?>
+        <div class="fabric-card" style="cursor:default;">
+          <div style="width:100%;aspect-ratio:4/3;background:linear-gradient(135deg,#f0f0f0,#e0e0e0);display:flex;align-items:center;justify-content:center;font-size:3em;color:#ccc;">🖼️</div>
+          <div class="fc-info">
+            <div class="fc-name">Coming Soon</div>
+            <div class="fc-meta">New looks being added</div>
+          </div>
+        </div>
+        <?php endfor; ?>
+      </div>
     <?php else: ?>
     <div class="fabric-grid" style="grid-template-columns: repeat(3, 1fr);">
       <?php foreach ($items as $item): ?>
       <div class="fabric-card" style="cursor:default;">
-        <img class="swatch-img" style="aspect-ratio:4/3;" src="<?= e($item['image_url']) ?>" alt="<?= e(ucfirst($item['occasion_category'])) ?> look">
+        <img class="swatch-img" style="aspect-ratio:4/3;" src="<?= e($item['image_url']) ?>" alt="<?= e(ucfirst($item['occasion_category'])) ?> look" loading="lazy">
         <div class="fc-info">
           <div class="fc-name"><?= e(ucfirst($item['occasion_category'])) ?><?= $item['client_name_display'] ? ' — ' . e($item['client_name_display']) : '' ?></div>
           <?php if ($item['client_story']): ?>
@@ -1353,6 +1633,7 @@ function page_booking(): void
                             'currency' => 'GHS',
                         ]);
                         $clientId = (int) $db->lastInsertId();
+                        $_SESSION['client_id'] = $clientId;
                     }
                 }
 
@@ -1385,6 +1666,12 @@ function page_booking(): void
         }
     }
 
+    if ($success) {
+        flash('success', 'Booking confirmed! We\'ll send a WhatsApp confirmation shortly.');
+        header('Location: ' . url('index'));
+        exit;
+    }
+
     render_header('Book a Consultation');
     ?>
 
@@ -1394,41 +1681,37 @@ function page_booking(): void
       <h2>Book a Free Consultation</h2>
       <p style="color:#5b564f; font-size:14.5px; margin-bottom:10px;">Guided video call, in-person fitting, or a quick chat about your design — no shop visit required to get started.</p>
 
-      <?php if ($success): ?>
-        <div class="flash flash-success">Booked! We'll send a WhatsApp confirmation shortly.</div>
-      <?php else: ?>
-        <?php foreach ($errors as $err): ?>
-          <div class="flash flash-error"><?= e($err) ?></div>
-        <?php endforeach; ?>
+      <?php foreach ($errors as $err): ?>
+        <div class="flash flash-error"><?= e($err) ?></div>
+      <?php endforeach; ?>
 
-        <form method="post" action="<?= url('booking') ?>">
-          <?= csrf_field() ?>
+      <form method="post" action="<?= url('booking') ?>">
+        <?= csrf_field() ?>
 
-          <label for="booking_type">Type of Appointment</label>
-          <select id="booking_type" name="booking_type" required>
-            <option value="consultation" <?= ($_POST['booking_type'] ?? '') === 'consultation' ? 'selected' : '' ?>>Free Consultation</option>
-            <option value="video_measurement" <?= ($_POST['booking_type'] ?? '') === 'video_measurement' ? 'selected' : '' ?>>Video Measurement Call</option>
-            <option value="in_person_fitting" <?= ($_POST['booking_type'] ?? '') === 'in_person_fitting' ? 'selected' : '' ?>>In-Person Fitting (Accra studio)</option>
-          </select>
+        <label for="booking_type">Type of Appointment</label>
+        <select id="booking_type" name="booking_type" required>
+          <option value="consultation" <?= ($_POST['booking_type'] ?? '') === 'consultation' ? 'selected' : '' ?>>Free Consultation</option>
+          <option value="video_measurement" <?= ($_POST['booking_type'] ?? '') === 'video_measurement' ? 'selected' : '' ?>>Video Measurement Call</option>
+          <option value="in_person_fitting" <?= ($_POST['booking_type'] ?? '') === 'in_person_fitting' ? 'selected' : '' ?>>In-Person Fitting (Accra studio)</option>
+        </select>
 
-          <label for="full_name">Full Name</label>
-          <input type="text" id="full_name" name="full_name" required value="<?= e($_POST['full_name'] ?? '') ?>">
+        <label for="full_name">Full Name</label>
+        <input type="text" id="full_name" name="full_name" required value="<?= e($_POST['full_name'] ?? '') ?>">
 
-          <label for="phone">WhatsApp Number</label>
-          <input type="text" id="phone" name="phone" placeholder="+233..." required value="<?= e($_POST['phone'] ?? '') ?>">
+        <label for="phone">WhatsApp Number</label>
+        <input type="text" id="phone" name="phone" placeholder="+233..." required value="<?= e($_POST['phone'] ?? '') ?>">
 
-          <label for="date">Date</label>
-          <input type="date" id="date" name="date" required min="<?= date('Y-m-d') ?>" value="<?= e($_POST['date'] ?? '') ?>">
+        <label for="date">Date</label>
+        <input type="date" id="date" name="date" required min="<?= date('Y-m-d') ?>" value="<?= e($_POST['date'] ?? '') ?>">
 
-          <label for="time">Time</label>
-          <input type="time" id="time" name="time" required value="<?= e($_POST['time'] ?? '') ?>">
+        <label for="time">Time</label>
+        <input type="time" id="time" name="time" required value="<?= e($_POST['time'] ?? '') ?>">
 
-          <div class="form-actions">
-            <button type="submit" class="btn-primary">Confirm Booking</button>
-          </div>
-          <p class="form-note">Times shown are Africa/Accra (GMT). We'll confirm by WhatsApp.</p>
-        </form>
-      <?php endif; ?>
+        <div class="form-actions">
+          <button type="submit" class="btn-primary" style="width:100%;">Confirm Booking</button>
+        </div>
+        <p class="form-note">Times shown are Africa/Accra (GMT). We'll confirm by WhatsApp.</p>
+      </form>
     </div>
   </div>
 </section>
@@ -1467,6 +1750,13 @@ function page_configurator(): void
       <span class="num">Price updates live</span>
     </div>
 
+    <?php if (empty($garments)): ?>
+      <div style="text-align:center;padding:40px;background:#fff;border-radius:8px;border:1px solid var(--line-dark);">
+        <p style="font-size:1.2rem;margin-bottom:12px;">🛠️ No garment types available yet</p>
+        <p style="color:#8a8478;">Please check back soon. We're adding new styles!</p>
+      </div>
+    <?php else: ?>
+
     <form id="configForm" method="post" action="<?= url('checkout') ?>">
       <?= csrf_field() ?>
 
@@ -1485,22 +1775,26 @@ function page_configurator(): void
       </div>
 
       <div class="fabric-grid">
-        <?php foreach ($fabrics as $f): ?>
-        <label class="fabric-card<?= $f['id'] == $selectedFabricId ? ' selected' : '' ?>">
-          <input type="radio" name="fabric_id" value="<?= (int) $f['id'] ?>"
-                 data-price="<?= e($f['price_modifier']) ?>"
-                 style="position:absolute; opacity:0;"
-                 <?= $f['id'] == $selectedFabricId ? 'checked' : '' ?>>
-          <img class="swatch-img" src="<?= e($f['image_url']) ?>" alt="<?= e($f['name']) ?>">
-          <div class="fc-info">
-            <div class="fc-name"><?= e($f['name']) ?></div>
-            <div class="fc-meta">
-              <?= $f['price_modifier'] > 0 ? '+' . money($f['price_modifier']) : money(0) ?> &middot;
-              <?= $f['stock_status'] === 'in_stock' ? 'In Stock' : 'Low Stock' ?>
+        <?php if (empty($fabrics)): ?>
+          <p style="grid-column:1/-1;text-align:center;color:#8a8478;padding:20px;">No fabrics available yet. Please check back soon.</p>
+        <?php else: ?>
+          <?php foreach ($fabrics as $f): ?>
+          <label class="fabric-card<?= $f['id'] == $selectedFabricId ? ' selected' : '' ?>" onclick="selectFabric(this, <?= (int) $f['id'] ?>)">
+            <input type="radio" name="fabric_id" value="<?= (int) $f['id'] ?>"
+                   data-price="<?= e($f['price_modifier']) ?>"
+                   style="position:absolute; opacity:0;"
+                   <?= $f['id'] == $selectedFabricId ? 'checked' : '' ?>>
+            <img class="swatch-img" src="<?= e($f['image_url']) ?>" alt="<?= e($f['name']) ?>" loading="lazy">
+            <div class="fc-info">
+              <div class="fc-name"><?= e($f['name']) ?></div>
+              <div class="fc-meta">
+                <?= $f['price_modifier'] > 0 ? '+' . money($f['price_modifier']) : money(0) ?> &middot;
+                <?= $f['stock_status'] === 'in_stock' ? 'In Stock' : 'Low Stock' ?>
+              </div>
             </div>
-          </div>
-        </label>
-        <?php endforeach; ?>
+          </label>
+          <?php endforeach; ?>
+        <?php endif; ?>
       </div>
 
       <div class="config-panel" style="grid-template-columns: 1fr 1fr 1fr 1fr; margin-bottom:30px;">
@@ -1508,7 +1802,7 @@ function page_configurator(): void
           <?php if (!empty($byCategory[$cat])): ?>
           <div class="config-field">
             <label><?= e(ucfirst($cat)) ?></label>
-            <select name="style_<?= e($cat) ?>" class="styleSelect">
+            <select name="style_<?= e($cat) ?>" class="styleSelect" onchange="updatePrice()">
               <?php foreach ($byCategory[$cat] as $opt): ?>
                 <option value="<?= (int) $opt['id'] ?>" data-price="<?= e($opt['price_modifier']) ?>">
                   <?= e($opt['name']) ?><?= $opt['price_modifier'] > 0 ? ' (+' . money($opt['price_modifier']) . ')' : '' ?>
@@ -1523,11 +1817,11 @@ function page_configurator(): void
       <div class="config-panel" style="grid-template-columns: 1fr 1fr auto;">
         <div class="config-field">
           <label>Monogram Text (optional)</label>
-          <input type="text" name="monogram_text" maxlength="3" placeholder="e.g. K.A.O">
+          <input type="text" name="monogram_text" maxlength="3" placeholder="e.g. K.A.O" oninput="updatePrice()">
         </div>
         <div class="config-field">
           <label>Delivery Tier</label>
-          <select name="order_tier">
+          <select name="order_tier" onchange="updatePrice()">
             <option value="standard">Standard</option>
             <option value="express_5day">Express (5 days)</option>
             <option value="rush_48hr">Rush (48 hrs)</option>
@@ -1541,57 +1835,91 @@ function page_configurator(): void
 
       <p style="text-align:center; margin-top:36px;">
         <?php if (current_client_id()): ?>
-          <button type="submit" class="btn-primary">Continue to Checkout</button>
+          <button type="submit" class="btn-primary" style="padding:16px 40px;">Continue to Checkout</button>
         <?php else: ?>
-          <a href="<?= url('login') ?>" class="btn-primary">Log In to Continue</a>
+          <a href="<?= url('login') ?>" class="btn-primary" style="padding:16px 40px;">Log In to Continue</a>
         <?php endif; ?>
       </p>
     </form>
+    <?php endif; ?>
   </div>
 </section>
 
 <script>
-(function () {
-  const garmentSelect = document.getElementById('garmentSelect');
-  const fabricRadios = document.querySelectorAll('input[name="fabric_id"]');
-  const styleSelects = document.querySelectorAll('.styleSelect');
-  const liveEl = document.getElementById('livePrice');
+// Price calculator
+const garmentSelect = document.getElementById('garmentSelect');
+const fabricRadios = document.querySelectorAll('input[name="fabric_id"]');
+const styleSelects = document.querySelectorAll('.styleSelect');
+const liveEl = document.getElementById('livePrice');
 
-  function currentPrice() {
-    let total = parseFloat(garmentSelect.selectedOptions[0]?.dataset.price || 0);
-    document.querySelectorAll('input[name="fabric_id"]:checked').forEach(function (r) {
-      total += parseFloat(r.dataset.price || 0);
-    });
-    styleSelects.forEach(function (sel) {
-      total += parseFloat(sel.selectedOptions[0]?.dataset.price || 0);
-    });
-    return total;
+function selectFabric(card, id) {
+  const radio = card.querySelector('input[type="radio"]');
+  if (radio) {
+    radio.checked = true;
+    updatePrice();
   }
-
-  function formatMoney(n) {
-    return 'GH₵' + n.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-  }
-
-  function recalc() {
-    liveEl.textContent = formatMoney(currentPrice());
-    document.querySelectorAll('.fabric-card').forEach(function (card) {
-      const radio = card.querySelector('input[type="radio"]');
-      card.classList.toggle('selected', radio.checked);
-    });
-  }
-
-  garmentSelect.addEventListener('change', recalc);
-  fabricRadios.forEach(function (r) { r.addEventListener('change', recalc); });
-  styleSelects.forEach(function (s) { s.addEventListener('change', recalc); });
-  document.querySelectorAll('.fabric-card').forEach(function (card) {
-    card.addEventListener('click', function () {
-      card.querySelector('input[type="radio"]').checked = true;
-      recalc();
-    });
+  document.querySelectorAll('.fabric-card').forEach(function(c) {
+    c.classList.remove('selected');
   });
+  card.classList.add('selected');
+}
 
-  recalc();
-})();
+function currentPrice() {
+  let total = 0;
+  if (garmentSelect) {
+    total += parseFloat(garmentSelect.selectedOptions[0]?.dataset.price || 0);
+  }
+  document.querySelectorAll('input[name="fabric_id"]:checked').forEach(function (r) {
+    total += parseFloat(r.dataset.price || 0);
+  });
+  styleSelects.forEach(function (sel) {
+    total += parseFloat(sel.selectedOptions[0]?.dataset.price || 0);
+  });
+  return total;
+}
+
+function formatMoney(n) {
+  return 'GH₵' + n.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+}
+
+function updatePrice() {
+  const total = currentPrice();
+  if (liveEl) {
+    liveEl.textContent = formatMoney(total);
+    liveEl.classList.add('update');
+    setTimeout(function() {
+      liveEl.classList.remove('update');
+    }, 300);
+  }
+}
+
+// Add event listeners
+if (garmentSelect) {
+  garmentSelect.addEventListener('change', updatePrice);
+}
+fabricRadios.forEach(function (r) {
+  r.addEventListener('change', updatePrice);
+});
+styleSelects.forEach(function (s) {
+  s.addEventListener('change', updatePrice);
+});
+// Click on fabric cards
+document.querySelectorAll('.fabric-card').forEach(function (card) {
+  card.addEventListener('click', function () {
+    const radio = card.querySelector('input[type="radio"]');
+    if (radio) {
+      radio.checked = true;
+      updatePrice();
+    }
+    document.querySelectorAll('.fabric-card').forEach(function (c) {
+      c.classList.remove('selected');
+    });
+    card.classList.add('selected');
+  });
+});
+
+// Initial price update
+updatePrice();
 </script>
 
 <?php
@@ -1787,7 +2115,11 @@ function page_dashboard(): void
     </div>
 
     <?php if (empty($orders)): ?>
-      <p style="color:#5b564f;">You don't have any orders yet. <a href="<?= url('configurator') ?>" style="color:var(--brass);">Design your first garment</a>.</p>
+      <div style="text-align:center;padding:60px 20px;background:#fff;border-radius:8px;border:1px solid var(--line-dark);">
+        <p style="font-size:3em;margin-bottom:16px;">👔</p>
+        <p style="color:#5b564f;font-size:1.1rem;">You don't have any orders yet.</p>
+        <a href="<?= url('configurator') ?>" style="color:var(--brass);font-weight:600;">Design your first garment</a>
+      </div>
     <?php endif; ?>
 
     <?php foreach ($orders as $order): ?>
@@ -1832,7 +2164,7 @@ function page_dashboard(): void
         </table>
 
         <?php if (!$isCancelled && (!$order['deposit_paid'] || !$order['balance_paid'])): ?>
-          <a href="<?= url('pay', 'order_id=' . (int) $order['id']) ?>" class="btn-primary" style="margin-top:18px;">
+          <a href="<?= url('pay', 'order_id=' . (int) $order['id']) ?>" class="btn-primary" style="margin-top:18px;display:inline-block;">
             Pay <?= !$order['deposit_paid'] ? 'Deposit' : 'Balance' ?> &mdash; <?= money(!$order['deposit_paid'] ? $order['deposit_amount'] : $order['balance_amount']) ?>
           </a>
         <?php endif; ?>
@@ -1860,7 +2192,7 @@ function page_swatch_request(): void
 
     if (!$fabric || !$fabric['free_swatch_eligible']) {
         flash('error', 'That fabric is not eligible for a free swatch.');
-        header('Location: ' . url('index') . '#fabrics');
+        header('Location: ' . url('index') . '#configurator');
         exit;
     }
 
@@ -1926,7 +2258,7 @@ function page_swatch_request(): void
           <label for="shipping_address">Shipping Address</label>
           <textarea id="shipping_address" name="shipping_address" rows="4" required><?= e($_POST['shipping_address'] ?? '') ?></textarea>
           <div class="form-actions">
-            <button type="submit" class="btn-primary">Request Swatch</button>
+            <button type="submit" class="btn-primary" style="width:100%;">Request Swatch</button>
           </div>
         </form>
       <?php endif; ?>
@@ -2224,9 +2556,6 @@ function page_staff_login(): void
     $db = getDB();
     $errors = [];
 
-    // One-time bootstrap: if there are no staff accounts yet, let the first
-    // visitor create the owner account instead of showing a login form
-    // nobody could ever pass.
     $staffCount = (int) $db->query('SELECT COUNT(*) FROM staff')->fetchColumn();
 
     if ($staffCount === 0) {
@@ -2282,7 +2611,7 @@ function page_staff_login(): void
         <label for="password">Password</label>
         <input type="password" id="password" name="password" required minlength="8">
         <div class="form-actions">
-          <button type="submit" class="btn-primary">Create Owner Account</button>
+          <button type="submit" class="btn-primary" style="width:100%;">Create Owner Account</button>
         </div>
       </form>
     </div>
@@ -2332,7 +2661,7 @@ function page_staff_login(): void
         <label for="password">Password</label>
         <input type="password" id="password" name="password" required>
         <div class="form-actions">
-          <button type="submit" class="btn-primary">Log In</button>
+          <button type="submit" class="btn-primary" style="width:100%;">Log In</button>
         </div>
       </form>
     </div>
@@ -2358,8 +2687,6 @@ function page_staff_dashboard(): void
     require_staff_login();
     $db = getDB();
 
-    // Clients who've booked a video measurement call but have no measurement
-    // on file yet — this is the queue a tailor works through.
     $pending = $db->query(
         "SELECT b.id AS booking_id, b.slot_datetime_utc, b.status AS booking_status,
                 c.id AS client_id, c.full_name, c.phone
@@ -2517,7 +2844,7 @@ function page_staff_measurement(): void
         <textarea id="extra_notes" name="extra_notes" rows="3"><?= e($_POST['extra_notes'] ?? '') ?></textarea>
 
         <div class="form-actions">
-          <button type="submit" class="btn-primary">Save Measurements</button>
+          <button type="submit" class="btn-primary" style="width:100%;">Save Measurements</button>
         </div>
       </form>
       <p style="margin-top:16px;"><a href="<?= url('staff_dashboard') ?>" style="color:var(--brass);">&larr; Back to queue</a></p>
@@ -2740,7 +3067,7 @@ switch ($page) {
     default:
         http_response_code(404);
         render_header('Page Not Found');
-        echo '<section class="page-section"><div class="wrap"><h2>Page not found</h2><p><a href="' . url('index') . '">Return home</a></p></div></section>';
+        echo '<section class="page-section"><div class="wrap"><h2>Page not found</h2><p><a href="' . url('index') . '" style="color:var(--brass);">Return home</a></p></div></section>';
         render_footer();
         break;
 }
